@@ -1,0 +1,15 @@
+{
+  "name": "Second Cerveau",
+  "short_name": "Cerveau",
+  "description": "Tu notes, l'IA range. Méthode Getting Things Done.",
+  "start_url": "/app",
+  "display": "standalone",
+  "background_color": "#fbfbfa",
+  "theme_color": "#5b63d3",
+  "lang": "fr",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
