@@ -1,11 +1,11 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useStore } from '@/lib/store';
-import type { Item, Project } from '@/lib/types';
+import type { Item, Project, Recurrence } from '@/lib/types';
 import { useUI } from './ui-context';
 import { Icon } from './icons';
-import { COLORS, CONTEXTS, HORIZONS, PRIORITIES, PSTATUSES, RECURRENCES, STATUSES, ST, domainsSorted, goalsSorted, linksIn, projectsSorted } from '@/lib/gtd';
-import { todayIso } from '@/lib/dates';
+import { COLORS, DURATIONS, HORIZONS, PRIORITIES, PSTATUSES, RECURRENCES, STATUSES, ST, WEEKDAYS_PICK, colorKeyOfProject, contextsOf, domainsSorted, goalsSorted, freeColor, hostOf, isEvent, linksIn, projectsSorted, recLabel } from '@/lib/gtd';
+import { fmtDuration, todayIso } from '@/lib/dates';
 
 function Head({ label, onClose }: { label: string; onClose: () => void }) {
   return (
@@ -66,7 +66,9 @@ function ItemDrawer({ id }: { id: string }) {
   const store = useStore();
   const { ui, closeDrawer, aiSort, removeItem } = useUI();
   const it = store.data.items[id];
+  const s = store.data.settings;
   if (!it) return null;
+  const ev = isEvent(it);
   const save = (p: Partial<Item>) => {
     const patch: Partial<Item> = { ...p, aiSorted: false };
     if ('status' in p) {
@@ -78,15 +80,38 @@ function ItemDrawer({ id }: { id: string }) {
       patch.recurrence = null;
     }
     if ('time' in p && p.time && !it.date) patch.date = todayIso();
+    if ('time' in p && p.time && !it.duration && !('duration' in p)) patch.duration = ev ? 60 : 30;
     if ('recurrence' in p && p.recurrence && !it.date) patch.date = todayIso();
+    if ('recurrence' in p && p.recurrence !== 'weekly') patch.recurrenceDays = null;
+    if ('recurrence' in p && !p.recurrence) patch.recurrenceInterval = null;
     if ('title' in p && !String(p.title || '').trim()) return;
     store.updateItem(id, patch);
   };
+  const setKind = (k: 'task' | 'event') => {
+    if (k === (ev ? 'event' : 'task')) return;
+    save(k === 'event' ? { kind: 'event', status: it.status === 'done' ? 'todo' : it.status === 'inbox' ? 'todo' : it.status, context: null, priority: null } : { kind: 'task' });
+  };
+  const wd = it.date ? new Date(it.date + 'T12:00').getDay() : null;
+  const days = it.recurrenceDays?.length ? it.recurrenceDays : wd !== null ? [wd] : [];
+  const toggleDay = (d: number) => {
+    const next = days.includes(d) ? days.filter((x) => x !== d) : [...days, d];
+    if (next.length) save({ recurrenceDays: next });
+  };
+  const unit = it.recurrence === 'weekly' ? 'semaine(s)' : it.recurrence === 'monthly' ? 'mois' : it.recurrence === 'yearly' ? 'an(s)' : 'jour(s)';
+  const durs = it.duration && !DURATIONS.some(([m]) => m === it.duration) ? [...DURATIONS, [it.duration, fmtDuration(it.duration)] as [number, string]].sort((a, b) => a[0] - b[0]) : DURATIONS;
   const links = linksIn(it.notes);
   return (
     <>
-      <Head label={ST[it.status] || 'Élément'} onClose={closeDrawer} />
+      <Head label={ev ? 'Événement' : ST[it.status] || 'Élément'} onClose={closeDrawer} />
       <div className="dr-body">
+        <div className="seg kind" role="tablist" aria-label="Type">
+          <button className={!ev ? 'on' : ''} onClick={() => setKind('task')}>
+            <Icon name="done" /> Tâche
+          </button>
+          <button className={ev ? 'on' : ''} onClick={() => setKind('event')}>
+            <Icon name="cal" /> Événement
+          </button>
+        </div>
         <label className="sr" htmlFor="d-title">
           Titre
         </label>
@@ -114,53 +139,33 @@ function ItemDrawer({ id }: { id: string }) {
             </div>
           </div>
         )}
-        <div className="fld">
-          <span>Statut</span>
-          <div className="seg">
-            {STATUSES.map(([k, l]) => (
-              <button key={k} className={it.status === k ? 'on' : ''} onClick={() => save({ status: k })}>
-                {l}
-              </button>
-            ))}
-          </div>
-        </div>
-        <label className="fld">
-          <span>Projet</span>
-          <ProjectSelect id="d-project" value={it.projectId} onChange={(v) => save({ projectId: v, domainId: v ? store.data.projects[v]?.domainId || it.domainId : it.domainId })} />
-        </label>
-        <div className="fld">
-          <span>Contexte</span>
-          <div className="pick">
-            {CONTEXTS.map(([k, l]) => (
-              <button key={k} className={it.context === k ? 'on' : ''} onClick={() => save({ context: it.context === k ? null : k })}>
-                {l}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="fld">
-          <span>Priorité</span>
-          <div className="seg">
-            {[['', 'Aucune'] as [string, string], ...PRIORITIES].map(([k, l]) => (
-              <button key={k} className={(it.priority || '') === k ? 'on' : ''} onClick={() => save({ priority: (k || null) as Item['priority'] })}>
-                {l}
-              </button>
-            ))}
-          </div>
-        </div>
         <div className="row2">
           <label className="fld">
             <span>Date</span>
             <input className="inp" type="date" id="d-date" value={it.date || ''} onChange={(e) => save({ date: e.target.value || null })} />
           </label>
           <label className="fld">
-            <span>Heure</span>
+            <span>{ev ? 'Heure (vide = toute la journée)' : 'Heure'}</span>
             <input className="inp" type="time" id="d-time" value={it.time || ''} onChange={(e) => save({ time: e.target.value || null })} />
           </label>
         </div>
+        <div className="fld">
+          <span>Durée</span>
+          <div className="pick">
+            <button className={!it.duration ? 'on' : ''} onClick={() => save({ duration: null })}>
+              Aucune
+            </button>
+            {durs.map(([m, l]) => (
+              <button key={m} className={it.duration === m ? 'on' : ''} onClick={() => save({ duration: m })}>
+                {l}
+              </button>
+            ))}
+          </div>
+          {it.time && <span className="hint">Astuce : dans l&apos;agenda, tire le bas du bloc pour l&apos;allonger.</span>}
+        </div>
         <label className="fld">
           <span>Se répète</span>
-          <select className="inp" id="d-rec" value={it.recurrence || ''} onChange={(e) => save({ recurrence: (e.target.value || null) as Item['recurrence'] })}>
+          <select className="inp" id="d-rec" value={it.recurrence || ''} onChange={(e) => save({ recurrence: (e.target.value || null) as Recurrence | null })}>
             <option value="">Ne se répète pas</option>
             {RECURRENCES.map(([k, l]) => (
               <option key={k} value={k}>
@@ -169,6 +174,77 @@ function ItemDrawer({ id }: { id: string }) {
             ))}
           </select>
         </label>
+        {it.recurrence && (
+          <div className="rec-box">
+            {it.recurrence === 'weekly' && (
+              <div className="days" role="group" aria-label="Jours">
+                {WEEKDAYS_PICK.map(([d, l]) => (
+                  <button key={d} className={days.includes(d) ? 'on' : ''} onClick={() => toggleDay(d)} aria-pressed={days.includes(d)}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            )}
+            {it.recurrence !== 'weekdays' && (
+              <label className="every">
+                Tous les
+                <input
+                  className="inp"
+                  type="number"
+                  min={1}
+                  max={99}
+                  value={it.recurrenceInterval || 1}
+                  onChange={(e) => {
+                    const n = Math.max(1, Math.min(99, Number(e.target.value) || 1));
+                    save({ recurrenceInterval: n > 1 ? n : null });
+                  }}
+                />
+                {unit}
+              </label>
+            )}
+            <span className="hint">{recLabel(it)}</span>
+          </div>
+        )}
+        <label className="fld">
+          <span>Projet</span>
+          <ProjectSelect id="d-project" value={it.projectId} onChange={(v) => save({ projectId: v, domainId: v ? store.data.projects[v]?.domainId || it.domainId : it.domainId })} />
+        </label>
+        {!ev && (
+          <div className="fld">
+            <span>Statut</span>
+            <div className="seg wrap">
+              {STATUSES.filter(([k]) => s.showWaitingSomeday || (k !== 'waiting' && k !== 'someday') || it.status === k).map(([k, l]) => (
+                <button key={k} className={it.status === k ? 'on' : ''} onClick={() => save({ status: k })}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {!ev && s.showContexts && (
+          <div className="fld">
+            <span>Contexte</span>
+            <div className="pick">
+              {contextsOf(s).map(([k, l]) => (
+                <button key={k} className={it.context === k ? 'on' : ''} onClick={() => save({ context: it.context === k ? null : k })}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {!ev && s.showPriorities && (
+          <div className="fld">
+            <span>Priorité</span>
+            <div className="seg">
+              {[['', 'Aucune'] as [string, string], ...PRIORITIES].map(([k, l]) => (
+                <button key={k} className={(it.priority || '') === k ? 'on' : ''} onClick={() => save({ priority: (k || null) as Item['priority'] })}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {it.status === 'waiting' && (
           <label className="fld">
             <span>En attente de</span>
@@ -223,6 +299,7 @@ function ProjectDrawer({ id, draft }: { id: string | null; draft?: Record<string
       domainId: form.domainId || null,
       dueDate: form.dueDate || null,
       goalId: form.goalId || null,
+      color: form.color || freeColor(store.data),
     });
     go('project', { projectId: np.id });
   };
@@ -263,6 +340,23 @@ function ProjectDrawer({ id, draft }: { id: string | null; draft?: Record<string
             <span>Échéance</span>
             <input className="inp" type="date" value={val('dueDate')} onChange={(e) => change('dueDate', e.target.value)} />
           </label>
+        </div>
+        <div className="fld">
+          <span>Couleur dans le calendrier</span>
+          <div className="swatches">
+            {COLORS.map((c) => {
+              const cur = creating ? form.color || '' : colorKeyOfProject(store.data, p);
+              return (
+                <button
+                  key={c}
+                  className={cur === c ? 'on' : ''}
+                  style={{ background: `var(--${c})` }}
+                  onClick={() => (creating ? setForm((f) => ({ ...f, color: c })) : store.updateProject(id!, { color: c }))}
+                  aria-label={`Couleur ${c}`}
+                />
+              );
+            })}
+          </div>
         </div>
         <label className="fld">
           <span>Objectif relié</span>
@@ -387,6 +481,51 @@ function GoalDrawer({ id }: { id: string }) {
   );
 }
 
+function PinDrawer({ id }: { id: string }) {
+  const store = useStore();
+  const { closeDrawer, toast } = useUI();
+  const p = store.data.pins[id];
+  if (!p) return null;
+  return (
+    <>
+      <Head label="Ressource épinglée" onClose={closeDrawer} />
+      <div className="dr-body">
+        <TextField id="dpin-title" area rows={2} className="dr-title" value={p.title} onSave={(v) => v.trim() && store.updatePin(id, { title: v.trim(), aiSorted: false })} />
+        <a className="pin-link" href={p.url} target="_blank" rel="noopener noreferrer">
+          <Icon name="link" /> {hostOf(p.url)}
+        </a>
+        <label className="fld">
+          <span>Adresse</span>
+          <TextField id="dpin-url" value={p.url} onSave={(v) => v.trim() && store.updatePin(id, { url: v.trim() })} />
+        </label>
+        <label className="fld">
+          <span>Projet</span>
+          <ProjectSelect id="dpin-project" value={p.projectId} onChange={(v) => store.updatePin(id, { projectId: v, aiSorted: false })} />
+        </label>
+        <label className="fld">
+          <span>Pourquoi je la garde</span>
+          <TextField id="dpin-note" area rows={4} value={p.note || ''} placeholder="Ce que tu veux en retenir, quand t'en servir…" onSave={(v) => store.updatePin(id, { note: v || null })} />
+        </label>
+      </div>
+      <div className="dr-foot">
+        <button
+          className="btn ghost danger"
+          onClick={() => {
+            const row = store.removePin(id);
+            closeDrawer();
+            toast({ text: 'Ressource retirée', actions: row ? [{ label: 'Annuler', run: () => store.restore('pins', row) }] : undefined });
+          }}
+        >
+          Retirer
+        </button>
+        <button className="btn" onClick={closeDrawer}>
+          Fermer
+        </button>
+      </div>
+    </>
+  );
+}
+
 function DomainDrawer({ id }: { id: string | null }) {
   const store = useStore();
   const { closeDrawer, go, toast } = useUI();
@@ -473,6 +612,7 @@ export function Drawer() {
         {dr.type === 'item' && <ItemDrawer id={dr.id} key={dr.id} />}
         {dr.type === 'project' && <ProjectDrawer id={dr.id} draft={dr.draft} key={dr.id || 'new'} />}
         {dr.type === 'goal' && <GoalDrawer id={dr.id} key={dr.id} />}
+        {dr.type === 'pin' && <PinDrawer id={dr.id} key={dr.id} />}
         {dr.type === 'domain' && <DomainDrawer id={dr.id} key={dr.id || 'new'} />}
       </section>
     </div>

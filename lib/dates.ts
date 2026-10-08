@@ -68,15 +68,83 @@ export const nextMonday = (from = todayIso()) => {
   return addDays(from, add);
 };
 
-/** Date suivante pour une tâche récurrente. */
-export function nextOccurrence(date: string, rec: string): string {
-  if (rec === 'daily') return addDays(date, 1);
-  if (rec === 'weekly') return addDays(date, 7);
-  if (rec === 'monthly') return addMonths(date, 1);
-  if (rec === 'weekdays') {
-    let n = addDays(date, 1);
-    while ([0, 6].includes(parseIso(n).getDay())) n = addDays(n, 1);
-    return n;
+export interface RecRule {
+  freq: string;
+  interval?: number | null;
+  days?: number[] | null;
+}
+
+const monthsBetween = (a: Date, b: Date) => (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+
+/** La date `d` (postérieure ou égale à `start`) tombe-t-elle sur la règle ? */
+export function matchesRule(start: string, rule: RecRule, d: string): boolean {
+  if (d < start) return false;
+  const iv = Math.max(1, rule.interval || 1);
+  const sd = parseIso(start);
+  const dd = parseIso(d);
+  switch (rule.freq) {
+    case 'daily':
+      return diffDays(d, start) % iv === 0;
+    case 'weekdays':
+      return dd.getDay() >= 1 && dd.getDay() <= 5;
+    case 'weekly': {
+      const days = rule.days && rule.days.length ? rule.days : [sd.getDay()];
+      if (!days.includes(dd.getDay())) return false;
+      const weeks = Math.round(diffDays(mondayOf(d), mondayOf(start)) / 7);
+      return weeks % iv === 0;
+    }
+    case 'monthly': {
+      const m = monthsBetween(sd, dd);
+      if (m % iv !== 0) return false;
+      const dim = new Date(dd.getFullYear(), dd.getMonth() + 1, 0).getDate();
+      return dd.getDate() === Math.min(sd.getDate(), dim);
+    }
+    case 'yearly': {
+      const y = dd.getFullYear() - sd.getFullYear();
+      if (y % iv !== 0 || dd.getMonth() !== sd.getMonth()) return false;
+      const dim = new Date(dd.getFullYear(), dd.getMonth() + 1, 0).getDate();
+      return dd.getDate() === Math.min(sd.getDate(), dim);
+    }
+  }
+  return false;
+}
+
+/** Prochaine date après `date` qui respecte la règle (l'ancre est `start`, par défaut `date`). */
+export function nextOccurrence(date: string, rule: RecRule | string, start?: string): string {
+  const r: RecRule = typeof rule === 'string' ? { freq: rule } : rule;
+  const anchor = start || date;
+  let d = addDays(date, 1);
+  for (let i = 0; i < 1500; i++) {
+    if (matchesRule(anchor, r, d)) return d;
+    d = addDays(d, 1);
   }
   return addDays(date, 1);
 }
+
+/** Toutes les occurrences entre `from` et `to` inclus (pour afficher les répétitions à venir). */
+export function occurrencesBetween(start: string, rule: RecRule, from: string, to: string, max = 400): string[] {
+  const out: string[] = [];
+  let d = from < start ? start : from;
+  while (d <= to && out.length < max) {
+    if (matchesRule(start, rule, d)) out.push(d);
+    d = addDays(d, 1);
+  }
+  return out;
+}
+
+export const minutesOf = (t: string) => {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + (m || 0);
+};
+export const timeOf = (min: number) => {
+  const m = Math.max(0, Math.min(23 * 60 + 59, Math.round(min)));
+  return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+};
+export const fmtDuration = (min?: number | null) => {
+  if (!min) return '';
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return h ? `${h} h${m ? ` ${pad(m)}` : ''}` : `${m} min`;
+};
+export const timeRange = (time?: string | null, duration?: number | null) =>
+  time ? (duration ? `${time}–${timeOf(minutesOf(time) + duration)}` : time) : '';

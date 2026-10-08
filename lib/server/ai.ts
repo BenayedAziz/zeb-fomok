@@ -56,6 +56,7 @@ export function todayLine(today: string) {
 
 export interface Ctx {
   today: string;
+  contexts?: string[];
   domains: { id: string; name: string }[];
   projects: { id: string; name: string; domain?: string; outcome?: string }[];
 }
@@ -66,7 +67,8 @@ function ctxBlock(c: Ctx) {
     c.projects
       .map((p) => `- ${p.id} : ${p.name}${p.domain ? ` [domaine : ${p.domain}]` : ''}${p.outcome ? ` | résultat attendu : ${p.outcome}` : ''}`)
       .join('\n') || '(aucun)';
-  return `${todayLine(c.today)}\n\nDomaines de vie (id : nom) :\n${doms}\n\nProjets en cours (id : nom) :\n${projs}`;
+  const ctxs = (c.contexts?.length ? c.contexts : ['@ordi', '@telephone', '@dehors', '@maison', '@bureau']).map((x) => `"${x}"`).join(', ');
+  return `${todayLine(c.today)}\n\nDomaines de vie (id : nom) :\n${doms}\n\nProjets en cours (id : nom) :\n${projs}\n\nContextes possibles : ${ctxs}.`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -75,29 +77,37 @@ function ctxBlock(c: Ctx) {
 export const CLASSIFY_SYSTEM = `Tu es l'assistant d'organisation d'une personne qui applique la méthode Getting Things Done (GTD) de David Allen. Tu ranges ce qu'elle capture, comme un praticien GTD rigoureux. Tu réponds uniquement avec un objet JSON valide, sans texte autour.`;
 
 export function classifyPrompt(text: string, c: Ctx) {
-  return `Élément capturé, pas encore rangé :
+  return `Texte capturé, pas encore rangé :
 """
-${text.slice(0, 4000)}
+${text.slice(0, 6000)}
 """
 
 ${ctxBlock(c)}
 
-Champs à renvoyer :
-- status : "todo" si c'est une action concrète à faire par la personne ; "waiting" si elle attend quelque chose de quelqu'un ; "someday" pour une idée, une envie ou un outil à tester plus tard sans engagement ; "inbox" seulement si c'est impossible à interpréter.
-- title : reformulation courte, qui commence par un verbe d'action si status vaut "todo". Garde la langue d'origine, n'ajoute aucune information absente du texte.
+Le texte peut contenir PLUSIEURS éléments distincts (séparés par des virgules, des « et », des retours à la ligne, ou concernant des projets différents) : renvoie un élément par action, événement ou ressource. S'il n'y en a qu'un, renvoie un seul élément.
+
+Pour chaque élément :
+- kind : "event" pour ce qui a lieu à un moment donné (réunion, rendez-vous, anniversaire, cours, séance, appel planifié) ; "task" pour une action à faire ; "pin" pour un article, un outil, une vidéo ou un lien à garder comme ressource (souvent une URL).
+- status (task) : "todo" si c'est une action concrète ; "waiting" si on attend quelque chose de quelqu'un ; "someday" pour une idée ou une envie sans engagement ; "inbox" seulement si c'est impossible à interpréter. Pour un event : "todo".
+- title : court. Pour une task, commence par un verbe d'action. Pour un event, le nom de l'événement (« Réunion RESAH », « Anniversaire de Sarah »). Pour un pin, le titre de la ressource. Garde la langue d'origine, n'invente rien.
 - projectId : l'id d'un projet existant seulement si le lien est clair, sinon null.
 - domainId : l'id du domaine le plus probable, sinon null.
-- context : "@ordi", "@telephone", "@dehors", "@maison", "@bureau" ou null.
+- context : un des contextes possibles ou null (task seulement).
 - priority : "high", "med", "low" ou null. "high" seulement en cas d'urgence ou d'échéance proche explicite.
-- date : AAAA-MM-JJ seulement si le texte donne une date ou un jour ("demain", "jeudi" : calcule depuis aujourd'hui), sinon null. Pour une récurrence, la prochaine occurrence.
-- time : HH:MM seulement si une heure est donnée, sinon null.
-- recurrence : "daily", "weekdays", "weekly", "monthly" si le texte dit que ça se répète ("tous les mardis", "chaque matin"), sinon null.
+- date : AAAA-MM-JJ si le texte donne une date ou un jour (« demain », « jeudi » : calcule depuis aujourd'hui). Pour une récurrence, la prochaine occurrence. Sinon null.
+- time : HH:MM si une heure est donnée, sinon null. Un event sans heure est sur toute la journée.
+- duration : durée en minutes si elle est donnée ou évidente (« de 19h à 20h » = 60, « réunion d'une heure » = 60), sinon null.
+- recurrence : "daily", "weekdays", "weekly", "monthly" ou "yearly" si ça se répète (« tous les mardis », « chaque mois », un anniversaire = "yearly"), sinon null.
+- recurrenceDays : pour "weekly", les jours concernés en nombres (0 = dimanche, 1 = lundi … 6 = samedi), ex. [2] pour « tous les mardis », [1,3] pour « lundi et mercredi ». Sinon null.
+- recurrenceInterval : 2 pour « toutes les 2 semaines », etc. Sinon null.
 - waitingFor : qui on attend si status vaut "waiting", sinon null.
-- newProject : si l'élément demande plusieurs étapes et ne correspond à aucun projet existant, {"name":"...","domainId":"id ou null","outcome":"à quoi ressemble terminé, en une phrase"} ; title devient alors la toute première action concrète. Sinon null.
+- url : l'adresse si c'est un pin, sinon null.
+- note : pour un pin, en quoi la ressource peut servir, en une phrase. Sinon null.
+- newProject : si une task demande plusieurs étapes et ne correspond à aucun projet existant, {"name":"...","domainId":"id ou null","outcome":"à quoi ressemble terminé, en une phrase"} ; title devient la toute première action concrète. Sinon null. Ne crée pas deux fois le même nouveau projet.
 - reason : une phrase courte qui explique le rangement.
 
-Exemple :
-{"status":"todo","title":"Appeler le comptable pour le devis","projectId":null,"domainId":null,"context":"@telephone","priority":"med","date":null,"time":null,"recurrence":null,"waitingFor":null,"newProject":null,"reason":"Action unique à faire au téléphone, sans date imposée."}`;
+Réponds avec {"items": [ ... ]}. Exemple pour « Réunion RESAH jeudi 14h pendant 1h, et relancer François pour le devis Egyptours » :
+{"items":[{"kind":"event","status":"todo","title":"Réunion RESAH","projectId":null,"domainId":null,"context":null,"priority":null,"date":"2026-10-08","time":"14:00","duration":60,"recurrence":null,"recurrenceDays":null,"recurrenceInterval":null,"waitingFor":null,"url":null,"note":null,"newProject":null,"reason":"Réunion à une date et une heure précises."},{"kind":"task","status":"todo","title":"Relancer François pour le devis","projectId":null,"domainId":null,"context":"@telephone","priority":"med","date":null,"time":null,"duration":null,"recurrence":null,"recurrenceDays":null,"recurrenceInterval":null,"waitingFor":null,"url":null,"note":null,"newProject":null,"reason":"Action unique liée au client Egyptours."}]}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -155,7 +165,7 @@ ${raw.slice(0, 60000)}
 Renvoie :
 {
   "projects": [ {"key": "p1", "name": "nom court", "existingId": "id d'un projet existant qui correspond, sinon null", "domainId": "id de domaine ou null", "outcome": "à quoi ressemble terminé, ou null", "description": "une phrase de contexte tirée des extraits"} ],
-  "items": [ {"title": "action qui commence par un verbe", "project": "key d'un projet ci-dessus ou null", "status": "todo" | "waiting" | "someday", "date": "AAAA-MM-JJ ou null", "time": "HH:MM ou null", "priority": "high" | "med" | "low" | null, "context": "@ordi" | "@telephone" | "@dehors" | "@maison" | "@bureau" | null, "waitingFor": "qui, si waiting", "reason": "d'où ça vient, en une phrase courte (ex. mail de François du 2 oct.)"} ]
+  "items": [ {"kind": "task" | "event", "title": "action qui commence par un verbe, ou nom de l'événement", "project": "key d'un projet ci-dessus ou null", "status": "todo" | "waiting" | "someday", "duration": "minutes ou null", "date": "AAAA-MM-JJ ou null", "time": "HH:MM ou null", "priority": "high" | "med" | "low" | null, "context": "@ordi" | "@telephone" | "@dehors" | "@maison" | "@bureau" | null, "waitingFor": "qui, si waiting", "reason": "d'où ça vient, en une phrase courte (ex. mail de François du 2 oct.)"} ]
 }
-Règles : un projet existant se réutilise via existingId plutôt que d'être recréé. Les rendez-vous à venir deviennent des items avec date et heure. Une échéance passée non faite devient un item sans date avec la date d'origine dans reason. Au maximum 25 projets et 80 items, les plus utiles d'abord.`;
+Règles : un projet existant se réutilise via existingId plutôt que d'être recréé. Les rendez-vous et réunions à venir deviennent des items kind \"event\" avec date, heure et durée. Une échéance passée non faite devient un item sans date avec la date d'origine dans reason. Au maximum 25 projets et 80 items, les plus utiles d'abord.`;
 }

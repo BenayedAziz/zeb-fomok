@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useStore, uuid } from '@/lib/store';
 import type { Item } from '@/lib/types';
 import { aiContext, useUI } from './ui-context';
-import { CTX, PR, ST } from '@/lib/gtd';
+import { COLORS, PR, ST, contextsOf } from '@/lib/gtd';
 import { isDate, isTime, relDate } from '@/lib/dates';
 
 interface PropProject { key: string; name: string; existingId?: string | null; domainId?: string | null; outcome?: string | null; description?: string | null }
@@ -92,7 +92,8 @@ export function ImportPanel({ onDone, autoSource }: { onDone?: () => void; autoS
         }
         const id = uuid();
         keyToId[p.key] = id;
-        return [{ id, name: p.name.slice(0, 120), domainId: p.domainId && d.domains[p.domainId] ? p.domainId : null, outcome: p.outcome || null, description: p.description || null, aiSorted: true }];
+        const color = COLORS[(Object.keys(d.projects).length + Object.keys(keyToId).length) % COLORS.length];
+        return [{ id, name: p.name.slice(0, 120), color, domainId: p.domainId && d.domains[p.domainId] ? p.domainId : null, outcome: p.outcome || null, description: p.description || null, aiSorted: true }];
       });
     const newItems: Partial<Item>[] = items
       .filter((_, i) => !offI[i])
@@ -101,15 +102,19 @@ export function ImportPanel({ onDone, autoSource }: { onDone?: () => void; autoS
         const pid = i.project ? keyToId[i.project] || null : null;
         const status = (['todo', 'waiting', 'someday'].includes(i.status || '') ? i.status : 'todo') as Item['status'];
         const date = isDate(i.date) ? i.date : null;
+        const kind = (i as { kind?: string }).kind === 'event' && date ? 'event' : 'task';
+        const dur = Number((i as { duration?: unknown }).duration);
         return {
           title: i.title.slice(0, 300),
+          kind,
+          duration: dur > 0 && dur <= 1440 ? Math.round(dur) : null,
           status,
           projectId: pid,
           domainId: pid ? (d.projects[pid]?.domainId ?? newProjects.find((x) => x.id === pid)?.domainId ?? null) : null,
           date,
           time: date && isTime(i.time) ? i.time : null,
           priority: i.priority && PR[i.priority] ? (i.priority as Item['priority']) : null,
-          context: i.context && CTX[i.context] ? i.context : null,
+          context: i.context && contextsOf(store.get().settings).some(([k]) => k === i.context) ? i.context : null,
           waitingFor: status === 'waiting' ? i.waitingFor || null : null,
           aiSorted: true,
           aiReason: `Importé depuis ${props.source === 'google' ? 'Gmail / Google Agenda' : props.source === 'microsoft' ? 'Outlook' : props.source === 'ics' ? 'ton calendrier' : props.source === 'notion' ? 'Notion' : 'ton texte'}${i.reason ? ` : ${i.reason}` : '.'}`,

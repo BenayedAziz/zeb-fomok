@@ -6,7 +6,8 @@ import { useUI } from '../ui-context';
 import { CardList } from '../Card';
 import { Icon } from '../icons';
 import { Head, MonthGrid } from './Calendar';
-import { CONTEXTS, PSTATUSES, backlog, colorOfProject, domainOfProject, domainsSorted, list, projectStats, projectsSorted } from '@/lib/gtd';
+import { PinList, AddPin } from './Pins';
+import { PSTATUSES, contextsOf, sortItems, backlog, colorOfProject, domainOfProject, domainsSorted, list, projectStats, projectsSorted } from '@/lib/gtd';
 import { MONTHS, isoOf, longDate, relDate, todayIso } from '@/lib/dates';
 
 function PCard({ p }: { p: Project }) {
@@ -137,7 +138,7 @@ export function ProjectView() {
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
   const [ctx, setCtx] = useState('');
-  const [link, setLink] = useState('');
+  const [kind, setKind] = useState<'task' | 'event'>('task');
   const [showDone, setShowDone] = useState(false);
   const id = ui.projectId;
   const p = id ? data.projects[id] : null;
@@ -156,24 +157,25 @@ export function ProjectView() {
   const st = projectStats(data, id);
   const nodate = backlog(data, id);
   const others = list(data.items).filter((i) => i.projectId === id && ['waiting', 'someday', 'inbox'].includes(i.status));
-  const done = list(data.items).filter((i) => i.projectId === id && i.status === 'done');
+  const done = list(data.items).filter((i) => i.projectId === id && i.status === 'done' && i.kind !== 'event');
+  const t0 = todayIso();
+  const events = list(data.items)
+    .filter((i) => i.projectId === id && i.kind === 'event' && (!i.date || i.date >= t0 || i.recurrence))
+    .sort(sortItems);
+  const pins = list(data.pins)
+    .filter((x) => x.projectId === id)
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   const [y, m] = month.split('-').map(Number);
   const shiftMonth = (dir: number) => setMonth(isoOf(new Date(y, m - 1 + dir, 1)).slice(0, 7));
 
   const addCard = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
-    store.addItem({ title: title.trim(), status: 'todo', projectId: id, domainId: p.domainId || null, date: date || null, context: ctx || null });
+    if (kind === 'event' && !date) return toast({ text: 'Choisis la date de l’événement.' });
+    store.addItem({ title: title.trim(), kind, status: 'todo', projectId: id, domainId: p.domainId || null, date: date || null, context: kind === 'task' ? ctx || null : null });
     setTitle('');
     setDate('');
-    toast({ text: 'Carte ajoutée' });
-  };
-  const addLink = (e: React.FormEvent) => {
-    e.preventDefault();
-    const u = link.trim();
-    if (!u) return;
-    store.updateProject(id, { links: [...(p.links || []), { url: u, label: u.replace(/^https?:\/\/(www\.)?/i, '').slice(0, 80) }] });
-    setLink('');
+    toast({ text: kind === 'event' ? 'Événement ajouté' : 'Carte ajoutée' });
   };
 
   return (
@@ -207,13 +209,21 @@ export function ProjectView() {
         <div className="stack">
           <form className="sec" onSubmit={addCard}>
             <div className="sec-head">
-              <h2>Ajouter une carte</h2>
+              <h2>Ajouter</h2>
+              <div className="seg sm">
+                <button type="button" className={kind === 'task' ? 'on' : ''} onClick={() => setKind('task')}>
+                  Tâche
+                </button>
+                <button type="button" className={kind === 'event' ? 'on' : ''} onClick={() => setKind('event')}>
+                  Événement
+                </button>
+              </div>
             </div>
             <div className="addrow">
               <label className="sr" htmlFor="padd-title">
                 Titre de la carte
               </label>
-              <input className="inp" id="padd-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Prochaine action pour ce projet…" />
+              <input className="inp" id="padd-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={kind === 'event' ? 'Réunion, rendez-vous, échéance…' : 'Prochaine action pour ce projet…'} />
               <label className="sr" htmlFor="padd-date">
                 Date
               </label>
@@ -222,13 +232,15 @@ export function ProjectView() {
                 Ajouter
               </button>
             </div>
-            <div className="pick">
-              {CONTEXTS.map(([k, l]) => (
-                <button type="button" key={k} className={ctx === k ? 'on' : ''} onClick={() => setCtx(ctx === k ? '' : k)}>
-                  {l}
-                </button>
-              ))}
-            </div>
+            {kind === 'task' && data.settings.showContexts && (
+              <div className="pick">
+                {contextsOf(data.settings).map(([k, l]) => (
+                  <button type="button" key={k} className={ctx === k ? 'on' : ''} onClick={() => setCtx(ctx === k ? '' : k)}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            )}
           </form>
           <div className="sec">
             <div className="sec-head">
@@ -270,6 +282,16 @@ export function ProjectView() {
               }
             />
           </div>
+          {events.length > 0 && (
+            <div className="sec">
+              <div className="sec-head">
+                <h2>
+                  Événements <span className="n">{events.length}</span>
+                </h2>
+              </div>
+              <CardList items={events} o={{ noProject: true, drag: false }} />
+            </div>
+          )}
           {others.length > 0 && (
             <div className="sec">
               <div className="sec-head">
@@ -345,33 +367,24 @@ export function ProjectView() {
           </div>
           <div className="info">
             <h2>
-              Liens <span className="n">{(p.links || []).length}</span>
+              <Icon name="pin" /> Ressources épinglées <span className="n">{pins.length + (p.links || []).length}</span>
             </h2>
-            <div className="links">
-              {(p.links || []).map((l, i) => (
-                <div className="link-row" key={`${l.url}-${i}`}>
-                  <a href={/^https?:\/\//i.test(l.url) ? l.url : `https://${l.url}`} target="_blank" rel="noopener noreferrer">
-                    {l.label || l.url}
-                  </a>
-                  <button
-                    className="icon-btn sm"
-                    onClick={() => store.updateProject(id, { links: p.links.filter((_, j) => j !== i) })}
-                    aria-label="Retirer le lien"
-                  >
-                    <Icon name="x" />
-                  </button>
-                </div>
-              ))}
-            </div>
-            <form className="addrow" onSubmit={addLink}>
-              <label className="sr" htmlFor="plink">
-                Lien
-              </label>
-              <input className="inp" id="plink" value={link} onChange={(e) => setLink(e.target.value)} placeholder="Coller un lien (doc, outil, Insta…)" />
-              <button className="btn" type="submit">
-                Ajouter
-              </button>
-            </form>
+            <PinList pins={pins} noProject />
+            {(p.links || []).length > 0 && (
+              <div className="links">
+                {(p.links || []).map((l, i) => (
+                  <div className="link-row" key={`${l.url}-${i}`}>
+                    <a href={/^https?:\/\//i.test(l.url) ? l.url : `https://${l.url}`} target="_blank" rel="noopener noreferrer">
+                      {l.label || l.url}
+                    </a>
+                    <button className="icon-btn sm" onClick={() => store.updateProject(id, { links: p.links.filter((_, j) => j !== i) })} aria-label="Retirer le lien">
+                      <Icon name="x" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <AddPin projectId={id} compact />
           </div>
         </div>
       </div>

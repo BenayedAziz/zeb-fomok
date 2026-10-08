@@ -1,18 +1,19 @@
 'use client';
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
-import type { AiResult, Data, Item } from '@/lib/types';
-import { CTX, PR, REC, ST, projectsSorted, domainsSorted } from '@/lib/gtd';
+import type { AiItem, Data, Item } from '@/lib/types';
+import { PR, REC, ST, contextsOf, domainsSorted, freeColor, projectsSorted, recLabel } from '@/lib/gtd';
 import { isDate, isTime, nextOccurrence, relDate, todayIso } from '@/lib/dates';
 
 export type View =
-  | 'day' | 'inbox' | 'next' | 'waiting' | 'someday' | 'projects' | 'project'
-  | 'goals' | 'review' | 'journal' | 'import' | 'onboarding';
+  | 'day' | 'inbox' | 'next' | 'waiting' | 'someday' | 'projects' | 'project' | 'pins'
+  | 'goals' | 'review' | 'journal' | 'import' | 'settings' | 'help' | 'onboarding';
 export type CalMode = 'day' | 'week' | 'month';
 export type DrawerState =
   | { type: 'item'; id: string }
   | { type: 'project'; id: string | null; draft?: Record<string, string> }
   | { type: 'goal'; id: string }
+  | { type: 'pin'; id: string }
   | { type: 'domain'; id: string | null; draft?: Record<string, string> };
 
 export interface ToastState {
@@ -28,10 +29,14 @@ interface UI {
   date: string;
   projectId: string | null;
   domainFilter: string | null;
+  /** Filtre du calendrier sur un projet. */
+  calProject: string | null;
   ctx: string;
   drawer: DrawerState | null;
   navOpen: boolean;
   captureOpen: boolean;
+  /** Date et heure préremplies quand on capture depuis un créneau du calendrier. */
+  capturePreset: Partial<Item> | null;
   plan: { id: string; x: number; y: number } | null;
   pending: Record<string, boolean>;
   aiOff: boolean;
@@ -47,7 +52,7 @@ interface UIApi {
   toast: (t: Omit<ToastState, 'key'>) => void;
   toastState: ToastState | null;
   dismissToast: () => void;
-  capture: (text: string) => Promise<void>;
+  capture: (text: string, extra?: Partial<Item>) => Promise<void>;
   aiSort: (id: string) => Promise<void>;
   toggleDone: (id: string) => void;
   schedule: (id: string, date: string | null, time?: string | null) => void;
@@ -64,6 +69,7 @@ export const useUI = () => {
 export function aiContext(d: Data) {
   return {
     today: todayIso(),
+    contexts: contextsOf(d.settings).map(([k]) => k),
     domains: domainsSorted(d).map((x) => ({ id: x.id, name: x.name })),
     projects: projectsSorted(d)
       .filter((p) => p.status !== 'done')
@@ -77,6 +83,41 @@ const AI_ERRORS: Record<string, string> = {
   not_signed_in: 'Ta session a expiré, reconnecte-toi.',
 };
 
+/** Normalise un élément renvoyé par l'IA en champs d'élément valides. */
+function itemFromAi(d: Data, r: AiItem): Partial<Item> {
+  const ctxs = new Set(contextsOf(d.settings).map(([k]) => k));
+  const p: Partial<Item> = { aiSorted: true, aiReason: typeof r.reason === 'string' ? r.reason.slice(0, 300) : '' };
+  p.kind = r.kind === 'event' ? 'event' : 'task';
+  if (typeof r.title === 'string' && r.title.trim()) p.title = r.title.trim().slice(0, 300);
+  p.status = p.kind === 'event' ? 'todo' : ((['todo', 'waiting', 'someday', 'inbox'].includes(r.status || '') ? r.status : 'inbox') as Item['status']);
+  if (r.projectId && d.projects[r.projectId]) p.projectId = r.projectId;
+  if (r.domainId && d.domains[r.domainId]) p.domainId = r.domainId;
+  if (p.projectId && !p.domainId) p.domainId = d.projects[p.projectId]?.domainId || null;
+  if (p.kind === 'task' && r.context && ctxs.has(r.context)) p.context = r.context;
+  if (p.kind === 'task' && r.priority && PR[r.priority]) p.priority = r.priority as Item['priority'];
+  if (isDate(r.date)) p.date = r.date;
+  if (isTime(r.time) && p.date) p.time = r.time;
+  const dur = Number(r.duration);
+  if (dur > 0 && dur <= 1440) p.duration = Math.round(dur);
+  else if (p.kind === 'event' && p.time) p.duration = 60;
+  if (r.recurrence && REC[r.recurrence]) {
+    p.recurrence = r.recurrence as Item['recurrence'];
+    if (!p.date) p.date = todayIso();
+    if (r.recurrence === 'weekly' && Array.isArray(r.recurrenceDays)) {
+      const days = r.recurrenceDays.map(Number).filter((x) => x >= 0 && x <= 6);
+      if (days.length) p.recurrenceDays = Array.from(new Set(days));
+    }
+    const iv = Number(r.recurrenceInterval);
+    if (iv > 1 && iv < 100) p.recurrenceInterval = Math.round(iv);
+    if (p.status === 'inbox') p.status = 'todo';
+  }
+  if (p.status === 'waiting') {
+    if (typeof r.waitingFor === 'string') p.waitingFor = r.waitingFor.slice(0, 120);
+    p.waitingSince = todayIso();
+  }
+  return p;
+}
+
 export function UIProvider({ children }: { children: React.ReactNode }) {
   const store = useStore();
   const storeRef = useRef(store);
@@ -87,10 +128,12 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     date: todayIso(),
     projectId: null,
     domainFilter: null,
+    calProject: null,
     ctx: 'all',
     drawer: null,
     navOpen: false,
     captureOpen: false,
+    capturePreset: null,
     plan: null,
     pending: {},
     aiOff: false,
@@ -103,7 +146,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
   const toast = useCallback((t: Omit<ToastState, 'key'>) => {
     setToast({ ...t, key: Date.now() });
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setToast(null), t.actions?.length ? 6000 : 3000);
+    timer.current = setTimeout(() => setToast(null), t.actions?.length ? 6500 : 3000);
   }, []);
   const dismissToast = useCallback(() => setToast(null), []);
 
@@ -118,54 +161,101 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       domainFilter: view === 'projects' ? extra?.domain ?? null : u.domainFilter,
     }));
     try {
-      if (!['project', 'onboarding', 'import'].includes(view)) localStorage.setItem('sc-view', view);
+      if (!['project', 'onboarding', 'import', 'help'].includes(view)) localStorage.setItem('sc-view', view);
     } catch {
       /* ignore */
     }
     document.querySelector('.work')?.scrollTo({ top: 0 });
   }, []);
 
+  /** Applique la réponse de l'IA : un ou plusieurs éléments, éventuellement des épingles et un nouveau projet. */
   const applyAI = useCallback(
-    (id: string, r: AiResult) => {
+    (placeholderId: string, raw: AiItem[]) => {
       const s = storeRef.current;
       const d = s.get();
-      const p: Partial<Item> = { aiSorted: true, aiReason: typeof r.reason === 'string' ? r.reason.slice(0, 300) : '' };
-      if (typeof r.title === 'string' && r.title.trim()) p.title = r.title.trim().slice(0, 300);
-      p.status = (['todo', 'waiting', 'someday', 'inbox'].includes(r.status || '') ? r.status : 'inbox') as Item['status'];
-      if (r.projectId && d.projects[r.projectId]) p.projectId = r.projectId;
-      if (r.domainId && d.domains[r.domainId]) p.domainId = r.domainId;
-      if (r.context && CTX[r.context]) p.context = r.context;
-      if (r.priority && PR[r.priority]) p.priority = r.priority as Item['priority'];
-      if (isDate(r.date)) p.date = r.date;
-      if (isTime(r.time) && p.date) p.time = r.time;
-      if (r.recurrence && REC[r.recurrence]) {
-        p.recurrence = r.recurrence as Item['recurrence'];
-        if (!p.date) p.date = todayIso();
+      const results = raw.filter((r) => r && typeof r === 'object').slice(0, 20);
+      if (!results.length) {
+        toast({ text: "L'IA n'a rien trouvé à ranger : c'est dans l'inbox." });
+        return;
       }
-      if (p.status === 'waiting') {
-        if (typeof r.waitingFor === 'string') p.waitingFor = r.waitingFor.slice(0, 120);
-        p.waitingSince = todayIso();
-      }
-      let newProject: string | null = null;
-      if (r.newProject && typeof r.newProject.name === 'string' && r.newProject.name.trim() && !p.projectId) {
-        const dom = r.newProject.domainId && d.domains[r.newProject.domainId] ? r.newProject.domainId : p.domainId || null;
-        const np = s.addProject({ name: r.newProject.name.trim().slice(0, 120), outcome: r.newProject.outcome?.slice(0, 300) || null, domainId: dom, aiSorted: true });
-        p.projectId = np.id;
-        newProject = np.name;
-        if (p.status === 'inbox') p.status = 'todo';
-      }
-      s.updateItem(id, p);
-      const chips = [ST[p.status!] || 'Inbox'];
-      const proj = p.projectId ? newProject || d.projects[p.projectId]?.name : null;
-      if (proj) chips.push(newProject ? `Nouveau projet : ${proj}` : proj);
-      if (p.date) chips.push(relDate(p.date) + (p.time ? ` ${p.time}` : ''));
-      if (p.recurrence) chips.push(REC[p.recurrence]);
+      const created: { coll: 'items' | 'pins' | 'projects'; id: string }[] = [];
+      const newProjects: Record<string, string> = {};
+      const chips: string[] = [];
+      let placeholderUsed = false;
+
+      results.forEach((r) => {
+        if (r.kind === 'pin') {
+          const url = typeof r.url === 'string' && r.url.trim() ? r.url.trim() : '';
+          const pin = s.addPin({
+            url,
+            title: (r.title || url || 'Ressource').slice(0, 200),
+            note: typeof r.note === 'string' ? r.note.slice(0, 400) : null,
+            projectId: r.projectId && d.projects[r.projectId] ? r.projectId : null,
+            aiSorted: true,
+          });
+          created.push({ coll: 'pins', id: pin.id });
+          chips.push(`Épinglé : ${pin.title.slice(0, 40)}`);
+          return;
+        }
+        const p = itemFromAi(s.get(), r);
+        if (r.newProject && typeof r.newProject.name === 'string' && r.newProject.name.trim() && !p.projectId) {
+          const key = r.newProject.name.trim().toLowerCase();
+          if (!newProjects[key]) {
+            const dom = r.newProject.domainId && d.domains[r.newProject.domainId] ? r.newProject.domainId : p.domainId || null;
+            const np = s.addProject({
+              name: r.newProject.name.trim().slice(0, 120),
+              outcome: r.newProject.outcome?.slice(0, 300) || null,
+              domainId: dom,
+              color: freeColor(s.get()),
+              aiSorted: true,
+            });
+            newProjects[key] = np.id;
+            created.push({ coll: 'projects', id: np.id });
+            chips.push(`Nouveau projet : ${np.name}`);
+          }
+          p.projectId = newProjects[key];
+          if (p.status === 'inbox') p.status = 'todo';
+        }
+        let id: string;
+        if (!placeholderUsed) {
+          placeholderUsed = true;
+          const ph = s.get().items[placeholderId];
+          // Capturé depuis un créneau de l'agenda : on garde ce créneau si l'IA n'en donne pas.
+          if (ph?.date && !p.date) {
+            if (p.status === 'inbox') p.status = 'todo';
+            if (ph.time && !p.duration) p.duration = p.kind === 'event' ? 60 : 30;
+          }
+          s.updateItem(placeholderId, p);
+          id = placeholderId;
+        } else {
+          const raw0 = s.get().items[placeholderId]?.raw || null;
+          id = s.addItem({ ...p, raw: raw0, title: p.title || 'Sans titre' }).id;
+          created.push({ coll: 'items', id });
+        }
+        const it = s.get().items[id];
+        const proj = it?.projectId ? s.get().projects[it.projectId]?.name : null;
+        const when = it?.date ? `${relDate(it.date)}${it.time ? ` ${it.time}` : ''}` : '';
+        chips.push([it?.kind === 'event' ? 'Événement' : ST[it?.status || 'todo'], proj, when, it?.recurrence ? recLabel(it) : ''].filter(Boolean).join(' · '));
+      });
+      // Si l'IA n'a renvoyé que des épingles, l'élément de départ n'a plus de raison d'être.
+      if (!placeholderUsed) s.removeItem(placeholderId);
+
+      const n = results.length;
       toast({
-        text: 'Rangé',
-        chips,
+        text: n > 1 ? `${n} éléments rangés` : 'Rangé',
+        chips: chips.slice(0, 5),
         actions: [
-          { label: 'Voir', run: () => setUi((u) => ({ ...u, drawer: { type: 'item', id } })) },
-          { label: 'Annuler', run: () => s.updateItem(id, { status: 'inbox', projectId: null, date: null, time: null, recurrence: null, aiSorted: false }) },
+          ...(placeholderUsed ? [{ label: 'Voir', run: () => setUi((u) => ({ ...u, drawer: { type: 'item', id: placeholderId } })) }] : []),
+          {
+            label: 'Annuler',
+            run: () => {
+              created.forEach((c) => (c.coll === 'items' ? s.removeItem(c.id) : c.coll === 'pins' ? s.removePin(c.id) : s.removeProject(c.id)));
+              if (placeholderUsed) {
+                const raw0 = s.get().items[placeholderId]?.raw;
+                s.updateItem(placeholderId, { status: 'inbox', kind: 'task', title: raw0 || s.get().items[placeholderId]?.title, projectId: null, date: null, time: null, duration: null, recurrence: null, recurrenceDays: null, recurrenceInterval: null, aiSorted: false });
+              }
+            },
+          },
         ],
       });
     },
@@ -190,7 +280,9 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
           toast({ text: AI_ERRORS[body.error] || "L'IA n'a pas pu ranger cet élément : il reste dans l'inbox." });
           return;
         }
-        if (storeRef.current.get().items[id]) applyAI(id, body.result || {});
+        const result = body.result || {};
+        const arr: AiItem[] = Array.isArray(result.items) ? result.items : Array.isArray(result) ? result : [result];
+        if (storeRef.current.get().items[id]) applyAI(id, arr);
       } catch {
         toast({ text: "Pas de connexion : c'est dans l'inbox." });
       } finally {
@@ -205,10 +297,10 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
   );
 
   const capture = useCallback(
-    async (text: string) => {
+    async (text: string, extra?: Partial<Item>) => {
       const t = text.trim();
       if (!t) return;
-      const it = storeRef.current.addItem({ title: t, raw: t, status: 'inbox' });
+      const it = storeRef.current.addItem({ title: t, raw: t, status: 'inbox', ...(extra || {}) });
       if (ui.aiOff) {
         toast({ text: "Ajouté à l'inbox", actions: [{ label: 'Voir', run: () => setUi((u) => ({ ...u, drawer: { type: 'item', id: it.id } })) }] });
         return;
@@ -241,10 +333,14 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       let nextId: string | null = null;
       let extra = '';
       if (it.recurrence) {
+        const rule = { freq: it.recurrence, days: it.recurrenceDays, interval: it.recurrenceInterval };
         const base = it.date || todayIso();
-        let nd = nextOccurrence(base, it.recurrence);
-        while (nd < todayIso()) nd = nextOccurrence(nd, it.recurrence);
-        const clone = s.addItem({ ...it, id: undefined as unknown as string, status: 'todo', date: nd, doneAt: null, aiSorted: false });
+        let nd = nextOccurrence(base, rule);
+        while (nd < todayIso()) nd = nextOccurrence(nd, rule, base);
+        const { id: _omit, createdAt: _c, ...rest } = it;
+        void _omit;
+        void _c;
+        const clone = s.addItem({ ...rest, status: 'todo', date: nd, doneAt: null, aiSorted: false });
         nextId = clone.id;
         extra = ` · prochaine : ${relDate(nd)}`;
       }
@@ -271,6 +367,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       if (!it) return;
       const p: Partial<Item> = { date, time: date ? (time === undefined ? it.time ?? null : time) : null };
       if (date && (it.status === 'inbox' || it.status === 'someday')) p.status = 'todo';
+      if (p.time && !it.duration) p.duration = it.kind === 'event' ? 60 : 30;
       s.updateItem(id, p);
       setUi((u) => ({ ...u, plan: null }));
       toast({ text: date ? `Planifié : ${relDate(date)}${p.time ? ` à ${p.time}` : ''}` : 'Retiré du calendrier' });

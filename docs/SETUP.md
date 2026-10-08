@@ -10,6 +10,7 @@ Règle d'or : **les clés ne se collent jamais dans le code ni dans un chat**. E
 
 1. Sur supabase.com, crée un projet `second-cerveau`, région **Paris (eu-west-3)**. Note le mot de passe de la base quelque part de sûr.
 2. **SQL Editor > New query** : colle tout le contenu de `supabase/migrations/001_init.sql`, puis **Run**. Ça crée les tables et les règles qui empêchent chacun de voir les données des autres.
+   Puis une nouvelle requête avec `supabase/migrations/002_events_pins_settings.sql`, **Run** (événements, durées, couleurs de projet, épingles, réglages). Si ta base existe déjà, lance seulement celle-ci : elle ne touche pas aux données.
 3. **Project Settings > API** : garde l'onglet ouvert, tu auras besoin de :
    - `Project URL` → `NEXT_PUBLIC_SUPABASE_URL`
    - `anon public` → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
@@ -26,6 +27,14 @@ Règle d'or : **les clés ne se collent jamais dans le code ni dans un chat**. E
 1. Sur console.anthropic.com, crée une clé API → `ANTHROPIC_API_KEY`.
 2. **Settings > Limits** : règle la limite de dépense mensuelle à **20 €** (ou équivalent en $). C'est le vrai garde-fou : au-delà, l'IA s'arrête toute seule.
 3. Dans l'appli, chaque personne a en plus une limite par jour (`AI_DAILY_LIMIT`, 60 par défaut). Un rangement coûte environ 0,2 centime avec le modèle par défaut.
+
+### Dictée vocale (facultatif)
+
+Sans rien configurer, le bouton micro utilise la dictée du navigateur (Chrome, Safari, Edge), en français. Pour une transcription plus fiable avec Whisper :
+
+1. Sur huggingface.co, **Settings > Access Tokens > Create new token**, type **Fine-grained**, coche **Make calls to Inference Providers** → `HF_TOKEN`.
+2. Facultatif : `HF_ASR_MODEL` (par défaut `openai/whisper-large-v3`). Tu peux mettre un autre modèle de reconnaissance vocale du Hub, ou ton propre modèle déployé avec `HF_ASR_URL` (adresse complète d'un Inference Endpoint).
+3. Chaque dictée compte comme un appel dans la limite IA du jour. L'audio n'est pas stocké.
 
 ## 3. Vercel : le site en ligne
 

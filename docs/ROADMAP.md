@@ -9,6 +9,18 @@
 - Comptes par email, données privées, limite IA par jour, liste d'invités
 - Installable sur téléphone
 
+## V1.1 (ajouts d'octobre)
+- Tâche ou événement : les événements (réunion, anniversaire) ne se cochent pas et s'affichent en plein dans l'agenda
+- Durée des tâches, blocs d'agenda à étirer et déplacer à la main (au quart d'heure), y compris d'un jour à l'autre en semaine
+- Répétitions : chaque jour, en semaine, certains jours (« tous les mardis et jeudis »), toutes les N semaines, chaque mois, chaque année
+- Une couleur par projet, légende cliquable pour filtrer le calendrier, « À faire » rangé par projet
+- Plusieurs éléments dans une seule capture, pour plusieurs projets
+- Épingler des articles et ressources par projet (page « Épinglés » + section sur la page projet)
+- Revue au rythme choisi : chaque jour, tous les 3 jours, semaine, quinzaine, mois ; version courte ou complète, passage de chaque projet, bilan du mois
+- Réglages : mode Simple ou GTD complet, contextes personnalisés, heures de l'agenda, vue de départ
+- Page « Comment ça marche »
+- Dictée vocale : navigateur ou Whisper (Hugging Face)
+
 ## Retours à recueillir pendant le test (3 amis)
 - Combien de captures par jour ? Combien corrigées après l'IA ?
 - Est-ce que la revue hebdo est faite ? Où est-ce qu'on décroche dans l'accueil ?
@@ -19,9 +31,9 @@
 - **L'IA planifie ma semaine** : elle place les prochaines actions dans les créneaux libres, je glisse pour ajuster
 - **Brief du matin par email** : agenda du jour, 3 priorités, ce qui est en retard
 - **Envoyer une tâche à Hermes** : la tâche passe en « En attente : Hermes », le résultat revient dans le projet
-- **Bibliothèque de veille** : outils et liens repérés, rattachés aux projets par l'IA, ressortis au bon moment
-- **Capture vocale** (dictée sur téléphone)
-- Bilan mensuel ou trimestriel par objectif
+- **Veille qui ressort au bon moment** : l'IA propose une ressource épinglée quand tu travailles sur le projet
+- Bilan trimestriel par objectif
+- Glisser une tâche d'un jour à l'autre dans la vue mois en gardant l'heure
 
 ## V3 : ouverture
 - Clé API personnelle par utilisateur (réglage « ma propre clé »)

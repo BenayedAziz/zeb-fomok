@@ -1,13 +1,14 @@
 'use client';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import type { Data, Domain, Goal, Item, Project, Review } from './types';
+import type { Data, Domain, Goal, Item, Pin, Project, Review, Settings } from './types';
+import { DEFAULT_SETTINGS } from './gtd';
 import { getBrowserSupabase } from './supabase/client';
 
-type Coll = 'items' | 'projects' | 'domains' | 'goals';
-const TABLE: Record<Coll, string> = { items: 'items', projects: 'projects', domains: 'domains', goals: 'goals' };
+type Coll = 'items' | 'projects' | 'domains' | 'goals' | 'pins';
+const TABLE: Record<Coll, string> = { items: 'items', projects: 'projects', domains: 'domains', goals: 'goals', pins: 'pins' };
 const LS_KEY = 'second-cerveau-demo-v1';
 
-const empty = (): Data => ({ items: {}, projects: {}, domains: {}, goals: {}, review: { last: null, checks: {} } });
+const empty = (): Data => ({ items: {}, projects: {}, domains: {}, goals: {}, pins: {}, review: { last: null, checks: {} }, settings: { ...DEFAULT_SETTINGS } });
 
 /* camelCase <-> snake_case pour les colonnes Postgres */
 const toSnake = (k: string) => k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
@@ -36,6 +37,7 @@ export interface Bulk {
   goals?: Partial<Goal>[];
   projects?: Partial<Project>[];
   items?: Partial<Item>[];
+  pins?: Partial<Pin>[];
 }
 
 export interface Store {
@@ -58,8 +60,12 @@ export interface Store {
   addGoal: (p: Partial<Goal>) => Goal;
   updateGoal: (id: string, p: Partial<Goal>) => void;
   removeGoal: (id: string) => void;
-  restore: (coll: Coll, row: Item | Project | Domain | Goal) => void;
+  addPin: (p: Partial<Pin>) => Pin;
+  updatePin: (id: string, p: Partial<Pin>) => void;
+  removePin: (id: string) => Pin | null;
+  restore: (coll: Coll, row: Item | Project | Domain | Goal | Pin) => void;
   setReview: (r: Review) => void;
+  setSettings: (p: Partial<Settings>) => void;
   bulk: (b: Bulk) => void;
   signOut: () => Promise<void>;
   onError: (fn: (msg: string) => void) => void;
@@ -90,7 +96,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (!supabase) {
         try {
           const raw = localStorage.getItem(LS_KEY);
-          if (raw) setData({ ...empty(), ...JSON.parse(raw) });
+          if (raw) {
+            const saved = JSON.parse(raw);
+            setData({ ...empty(), ...saved, settings: { ...DEFAULT_SETTINGS, ...(saved.settings || {}) } });
+          }
         } catch {
           /* stockage indisponible : on part de zéro */
         }
@@ -99,12 +108,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
       const { data: u } = await supabase.auth.getUser();
       setEmail(u.user?.email ?? null);
-      const [it, pr, dm, gl, rv] = await Promise.all([
+      const [it, pr, dm, gl, rv, pn, st] = await Promise.all([
         supabase.from('items').select('*'),
         supabase.from('projects').select('*'),
         supabase.from('domains').select('*'),
         supabase.from('goals').select('*'),
         supabase.from('reviews').select('*').maybeSingle(),
+        supabase.from('pins').select('*'),
+        supabase.from('settings').select('*').maybeSingle(),
       ]);
       if (cancelled) return;
       const firstErr = it.error || pr.error || dm.error || gl.error;
@@ -119,6 +130,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         projects: map<Project>(pr.data),
         domains: map<Domain>(dm.data),
         goals: map<Goal>(gl.data),
+        pins: map<Pin>(pn.data),
+        settings: { ...DEFAULT_SETTINGS, ...((st.data?.data as Partial<Settings>) || {}) },
         review: rv.data ? { last: rv.data.last, checks: rv.data.checks || {} } : { last: null, checks: {} },
       });
       setReady(true);
@@ -185,7 +198,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const cur = (dataRef.current[coll] as unknown as Record<string, T>)[id];
       if (!cur) return;
       const row = { ...cur, ...p, updatedAt: nowIso() } as T;
-      if (coll === 'domains' || coll === 'goals') delete (row as Record<string, unknown>).updatedAt;
+      if (coll === 'domains' || coll === 'goals' || coll === 'pins') delete (row as Record<string, unknown>).updatedAt;
       dataRef.current = { ...dataRef.current, [coll]: { ...dataRef.current[coll], [id]: row } };
       put(coll, row, false);
     };
@@ -228,7 +241,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       addGoal: (p) => insertRow<Goal>('goals', { horizon: 'year', title: '', ...p, id: p.id || uuid(), createdAt: nowIso() } as Goal),
       updateGoal: (id, p) => patchRow<Goal>('goals', id, p),
       removeGoal: (id) => del('goals', id),
+      addPin: (p) => insertRow<Pin>('pins', { title: p.title || p.url || '', url: '', ...p, id: p.id || uuid(), createdAt: nowIso() } as Pin),
+      updatePin: (id, p) => patchRow<Pin>('pins', id, p),
+      removePin: (id) => {
+        const prev = dataRef.current.pins[id] || null;
+        del('pins', id);
+        return prev;
+      },
       restore: (coll, row) => put(coll, row as { id: string }, true),
+      setSettings: (p) => {
+        const next = { ...dataRef.current.settings, ...p };
+        dataRef.current = { ...dataRef.current, settings: next };
+        setData((d) => ({ ...d, settings: next }));
+        remote(() => supabase!.from('settings').upsert({ data: next }, { onConflict: 'user_id' }));
+      },
       setReview: (r) => {
         setData((d) => ({ ...d, review: r }));
         remote(() => supabase!.from('reviews').upsert({ last: r.last ?? null, checks: r.checks }, { onConflict: 'user_id' }));
@@ -241,6 +267,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const goals = (b.goals || []).map((x) => ({ horizon: 'year', ...x, id: x.id || uuid(), createdAt: stamp }) as Goal);
         const projects = (b.projects || []).map((x) => ({ status: 'active', links: [], ...x, id: x.id || uuid(), createdAt: stamp }) as Project);
         const items = (b.items || []).map((x) => ({ status: 'todo', ...x, id: x.id || uuid(), createdAt: stamp }) as Item);
+        const pins = (b.pins || []).map((x) => ({ title: x.url || '', url: '', ...x, id: x.id || uuid(), createdAt: stamp }) as Pin);
         const add = <T extends { id: string }>(m: Record<string, T>, rows: T[]) => ({ ...m, ...Object.fromEntries(rows.map((r) => [r.id, r])) });
         dataRef.current = {
           ...d0,
@@ -248,6 +275,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           goals: add(d0.goals, goals),
           projects: add(d0.projects, projects),
           items: add(d0.items, items),
+          pins: add(d0.pins, pins),
         };
         setData(dataRef.current);
         remote(async () => {
@@ -256,6 +284,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             ['goals', goals as unknown as Record<string, unknown>[]],
             ['projects', projects as unknown as Record<string, unknown>[]],
             ['items', items as unknown as Record<string, unknown>[]],
+            ['pins', pins as unknown as Record<string, unknown>[]],
           ];
           for (const [t, rows] of steps) {
             if (!rows.length) continue;

@@ -10,8 +10,12 @@ import { CalendarView, Head } from './views/Calendar';
 import { InboxView, JournalView, NextView, StatusListView } from './views/Lists';
 import { ProjectView, ProjectsView } from './views/Projects';
 import { GoalsView, ReviewView } from './views/Reflect';
-import { counts, domainsSorted, lastReviewDays, list, projectStats, projectsSorted } from '@/lib/gtd';
-import { addDays, nextMonday, todayIso } from '@/lib/dates';
+import { PinsView } from './views/Pins';
+import { SettingsView } from './views/Settings';
+import { HelpView } from './views/Help';
+import { Mic } from './Mic';
+import { colorOfProject, counts, domainsSorted, lastReviewDays, list, projectStats, projectsSorted, reviewDue } from '@/lib/gtd';
+import { addDays, longDate, nextMonday, timeOf, todayIso } from '@/lib/dates';
 
 const IMPORT_ERRORS: Record<string, string> = {
   not_configured: "Cette connexion n'est pas encore activée sur le site.",
@@ -62,14 +66,19 @@ function Sidebar() {
         <div className="nav-group">
           <div className="nav-label">Organiser</div>
           <NavBtn view="next" label="Prochaines actions" icon="next" n={c.next || undefined} />
-          <NavBtn view="waiting" label="En attente" icon="wait" n={c.waiting || undefined} />
-          <NavBtn view="someday" label="Un jour / peut-être" icon="someday" n={c.someday || undefined} />
+          {data.settings.showWaitingSomeday && (
+            <>
+              <NavBtn view="waiting" label="En attente" icon="wait" n={c.waiting || undefined} />
+              <NavBtn view="someday" label="Un jour / peut-être" icon="someday" n={c.someday || undefined} />
+            </>
+          )}
           <NavBtn view="projects" label="Projets" icon="proj" />
+          <NavBtn view="pins" label="Épinglés" icon="pin" n={c.pins || undefined} />
         </div>
         <div className="nav-group">
           <div className="nav-label">Prendre du recul</div>
           <NavBtn view="goals" label="Objectifs" icon="goal" />
-          <NavBtn view="review" label="Revue hebdo" icon="review" n={lr === null || lr >= 7 ? (lr === null ? '!' : `${lr} j`) : undefined} warn />
+          <NavBtn view="review" label="Revue" icon="review" n={reviewDue(data) ? (lr === null ? '!' : `${lr} j`) : undefined} warn />
           <NavBtn view="journal" label="Journal" icon="done" />
         </div>
         <div className="nav-group">
@@ -92,6 +101,7 @@ function Sidebar() {
                   const st = projectStats(data, p.id);
                   return (
                     <button key={p.id} className={`nav sub${ui.view === 'project' && ui.projectId === p.id ? ' on' : ''}`} onClick={() => go('project', { projectId: p.id })}>
+                      <i className="pdot" style={{ background: colorOfProject(data, p) }} />
                       <span>{p.name}</span>
                       {st.open.length ? <span className="n">{st.open.length}</span> : null}
                     </button>
@@ -106,6 +116,7 @@ function Sidebar() {
               </div>
               {orphans.map((p) => (
                 <button key={p.id} className={`nav sub${ui.view === 'project' && ui.projectId === p.id ? ' on' : ''}`} onClick={() => go('project', { projectId: p.id })}>
+                  <i className="pdot" style={{ background: colorOfProject(data, p) }} />
                   <span>{p.name}</span>
                 </button>
               ))}
@@ -114,6 +125,8 @@ function Sidebar() {
         </div>
         <div className="side-foot">
           <NavBtn view="import" label="Importer depuis mes outils" icon="import" />
+          <NavBtn view="settings" label="Réglages" icon="gear" />
+          <NavBtn view="help" label="Comment ça marche" icon="help" />
           <button className="nav" onClick={() => go('onboarding')}>
             <Icon name="chat" />
             <span>Refaire l&apos;entretien</span>
@@ -134,9 +147,9 @@ function Sidebar() {
 
 function TopBar() {
   const store = useStore();
-  const { ui, set, capture } = useUI();
+  const { ui, set, capture, toast } = useUI();
   const [v, setV] = useState('');
-  const titles: Partial<Record<View, string>> = { day: 'Ma journée', inbox: 'Inbox', next: 'Prochaines actions', waiting: 'En attente', someday: 'Un jour / peut-être', projects: 'Projets', project: 'Projet', goals: 'Objectifs', review: 'Revue hebdo', journal: 'Journal', import: 'Importer' };
+  const titles: Partial<Record<View, string>> = { day: 'Ma journée', inbox: 'Inbox', next: 'Prochaines actions', waiting: 'En attente', someday: 'Un jour / peut-être', projects: 'Projets', project: 'Projet', pins: 'Épinglés', goals: 'Objectifs', review: 'Revue', journal: 'Journal', import: 'Importer', settings: 'Réglages', help: 'Aide' };
   return (
     <header className="top">
       <button className="icon-btn menu-btn" onClick={() => set({ navOpen: true })} aria-label="Ouvrir le menu">
@@ -156,7 +169,8 @@ function TopBar() {
         <label htmlFor="captureInput" className="sr">
           Capturer une idée ou une tâche
         </label>
-        <input id="captureInput" value={v} onChange={(e) => setV(e.target.value)} placeholder="Note n'importe quoi, l'IA le range… (ex. « Appeler Karim jeudi 14h »)" autoComplete="off" enterKeyHint="send" />
+        <input id="captureInput" value={v} onChange={(e) => setV(e.target.value)} placeholder="Note une ou plusieurs choses, l'IA range… (ex. « Réunion RESAH jeudi 14h, relancer François »)" autoComplete="off" enterKeyHint="send" />
+        <Mic onText={(t) => setV(t)} onError={(m) => toast({ text: m })} />
         <span className="kbd">C</span>
         <button className="btn primary sm" type="submit" disabled={!v.trim()}>
           Capturer
@@ -171,22 +185,25 @@ function TopBar() {
 }
 
 function CaptureSheet() {
-  const { ui, set, capture } = useUI();
+  const { ui, set, capture, toast } = useUI();
   const [v, setV] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
+  const preset = ui.capturePreset;
   useEffect(() => {
     if (ui.captureOpen) setTimeout(() => ref.current?.focus(), 30);
   }, [ui.captureOpen]);
   if (!ui.captureOpen) return null;
+  const close = () => set({ captureOpen: false, capturePreset: null });
   const submit = () => {
     const t = v;
+    if (!t.trim()) return;
     setV('');
-    set({ captureOpen: false });
-    capture(t);
+    close();
+    capture(t, preset || undefined);
   };
   return (
     <div className="overlay" role="dialog" aria-modal="true" aria-label="Capturer">
-      <div className="scrim" onClick={() => set({ captureOpen: false })} />
+      <div className="scrim" onClick={close} />
       <form
         className="sheet"
         onSubmit={(e) => {
@@ -194,26 +211,37 @@ function CaptureSheet() {
           submit();
         }}
       >
-        <div className="eyebrow" style={{ margin: 0 }}>
-          Capturer
+        <div className="sheet-head">
+          <span className="eyebrow" style={{ margin: 0 }}>
+            Capturer
+          </span>
+          {preset?.date && (
+            <span className="chip date today">
+              {longDate(preset.date)}
+              {preset.time ? ` · ${preset.time}` : ''}
+            </span>
+          )}
         </div>
-        <textarea
-          ref={ref}
-          className="big"
-          rows={3}
-          value={v}
-          onChange={(e) => setV(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-          placeholder="Une idée, une tâche, un rendez-vous… L'IA s'occupe de ranger."
-          aria-label="Ce que tu as en tête"
-        />
+        <div className="sheet-input">
+          <textarea
+            ref={ref}
+            className="big"
+            rows={3}
+            value={v}
+            onChange={(e) => setV(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            placeholder={preset?.time ? 'Qu’est-ce que tu mets sur ce créneau ?' : "Une ou plusieurs choses : tâches, rendez-vous, liens… L'IA range chaque élément."}
+            aria-label="Ce que tu as en tête"
+          />
+          <Mic onText={(t) => setV(t)} onError={(m) => toast({ text: m })} />
+        </div>
         <div className="vh-actions" style={{ justifyContent: 'space-between' }}>
-          <span className="hint">Ex. « Séance de MMA tous les mardis 19h », « Relancer François pour le devis »</span>
+          <span className="hint">Ex. « MMA tous les mardis 19h, anniversaire de Sarah le 12 mars, finir le devis Egyptours »</span>
           <button className="btn primary" type="submit" disabled={!v.trim()}>
             Capturer
           </button>
@@ -347,6 +375,12 @@ function Main() {
       return <JournalView />;
     case 'import':
       return <ImportView />;
+    case 'pins':
+      return <PinsView />;
+    case 'settings':
+      return <SettingsView />;
+    case 'help':
+      return <HelpView />;
     default:
       return <CalendarView />;
   }
@@ -375,6 +409,7 @@ function Shell() {
       set({ view: 'import', importSource: imp });
       return;
     }
+    set({ cal: store.data.settings.defaultCal || 'day' });
     let done = false;
     try {
       done = localStorage.getItem(ONB_KEY) === '1';
@@ -388,7 +423,7 @@ function Shell() {
     }
     try {
       const v = localStorage.getItem('sc-view') as View | null;
-      if (v && ['day', 'inbox', 'next', 'waiting', 'someday', 'projects', 'goals', 'review', 'journal'].includes(v)) set({ view: v });
+      if (v && ['day', 'inbox', 'next', 'waiting', 'someday', 'projects', 'pins', 'goals', 'review', 'journal', 'settings', 'help'].includes(v)) set({ view: v });
     } catch {
       /* ignore */
     }
@@ -405,7 +440,7 @@ function Shell() {
           (document.activeElement as HTMLElement | null)?.blur();
           return set({ drawer: null });
         }
-        if (ui.ui.captureOpen) return set({ captureOpen: false });
+        if (ui.ui.captureOpen) return set({ captureOpen: false, capturePreset: null });
         if (ui.ui.navOpen) return set({ navOpen: false });
         if (el.id === 'captureInput') el.blur();
         return;
@@ -415,9 +450,16 @@ function Shell() {
         openCapture();
         return;
       }
-      if (!typing && !e.metaKey && !e.ctrlKey && !e.altKey && (e.key === 'c' || e.key === 'C' || e.key === '/')) {
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === 'c' || e.key === 'C' || e.key === '/') {
         e.preventDefault();
         openCapture();
+        return;
+      }
+      const cal = ({ j: 'day', s: 'week', m: 'month' } as Record<string, 'day' | 'week' | 'month'>)[e.key.toLowerCase()];
+      if (cal && !ui.ui.drawer && !ui.ui.captureOpen) {
+        e.preventDefault();
+        set({ view: 'day', cal });
       }
     };
     const openCapture = () => {
@@ -463,6 +505,14 @@ function Shell() {
       if (z.dataset.drop === 'backlog') return ui.schedule(id, null);
       const date = z.dataset.date;
       if (!date) return;
+      if (z.dataset.drop === 'timeline') {
+        // L'heure dépend de l'endroit où on lâche la carte, au quart d'heure près.
+        const rect = z.getBoundingClientRect();
+        const hp = Number(z.dataset.hourpx) || 52;
+        const st = Number(z.dataset.start) || 0;
+        const min = Math.max(0, Math.min(24 * 60 - 15, Math.round((st * 60 + ((e.clientY - rect.top) / hp) * 60) / 15) * 15));
+        return ui.schedule(id, date, timeOf(min));
+      }
       const time = z.dataset.time ? z.dataset.time : z.dataset.keeptime ? undefined : null;
       ui.schedule(id, date, time);
     };

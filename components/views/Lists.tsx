@@ -1,9 +1,9 @@
 'use client';
 import { useStore } from '@/lib/store';
 import { useUI } from '../ui-context';
-import { CardList } from '../Card';
+import { CardList, GroupedByProject } from '../Card';
 import { Head } from './Calendar';
-import { CONTEXTS, isOpen, list, sortItems } from '@/lib/gtd';
+import { contextsOf, isOpen, list, sortItems } from '@/lib/gtd';
 import { longDate, todayIso } from '@/lib/dates';
 
 export function InboxView() {
@@ -49,24 +49,34 @@ export function NextView() {
   const { data } = useStore();
   const { ui, set } = useUI();
   const t = todayIso();
+  const ctxs = contextsOf(data.settings);
+  const byProject = !data.settings.showContexts || ui.ctx === 'project';
   const its = list(data.items).filter((i) => isOpen(i) && (!i.date || i.date <= t));
-  const groups = (ui.ctx === 'all' ? [...CONTEXTS, ['', 'Sans contexte'] as [string, string]] : CONTEXTS.filter(([k]) => k === ui.ctx))
+  const groups = (ui.ctx === 'all' ? [...ctxs, ['', 'Sans contexte'] as [string, string]] : ctxs.filter(([k]) => k === ui.ctx))
     .map(([k, l]) => [l, its.filter((i) => (i.context || '') === k).sort(sortItems)] as const)
     .filter(([, g]) => g.length);
   return (
     <>
-      <Head eyebrow="Organiser" title="Prochaines actions" lede="Tout ce que tu peux faire maintenant, rangé par contexte : regarde la colonne qui correspond à l'endroit où tu es." />
-      <div className="filters">
-        <div className="pick">
-          {[['all', 'Tous les contextes'] as [string, string]].concat(CONTEXTS).map(([k, l]) => (
-            <button key={k} className={ui.ctx === k ? 'on' : ''} onClick={() => set({ ctx: k })}>
-              {l}
-            </button>
-          ))}
+      <Head
+        eyebrow="Organiser"
+        title="Prochaines actions"
+        lede={byProject ? "Tout ce que tu peux faire maintenant, rangé par projet." : "Tout ce que tu peux faire maintenant, rangé par contexte : regarde la colonne qui correspond à l'endroit où tu es."}
+      />
+      {data.settings.showContexts && (
+        <div className="filters">
+          <div className="pick">
+            {([['all', 'Par contexte'], ['project', 'Par projet']] as [string, string][]).concat(ctxs).map(([k, l]) => (
+              <button key={k} className={ui.ctx === k ? 'on' : ''} onClick={() => set({ ctx: k })}>
+                {l}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
       {!its.length ? (
         <div className="empty">Aucune prochaine action. Capture quelque chose ou ouvre un projet pour définir sa prochaine étape.</div>
+      ) : byProject ? (
+        <GroupedByProject items={[...its].sort(sortItems)} />
       ) : !groups.length ? (
         <div className="empty">Rien dans ce contexte pour l&apos;instant.</div>
       ) : (
