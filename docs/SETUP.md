@@ -11,6 +11,7 @@ Règle d'or : **les clés ne se collent jamais dans le code ni dans un chat**. E
 1. Sur supabase.com, crée un projet `second-cerveau`, région **Paris (eu-west-3)**. Note le mot de passe de la base quelque part de sûr.
 2. **SQL Editor > New query** : colle tout le contenu de `supabase/migrations/001_init.sql`, puis **Run**. Ça crée les tables et les règles qui empêchent chacun de voir les données des autres.
    Puis une nouvelle requête avec `supabase/migrations/002_events_pins_settings.sql`, **Run** (événements, durées, couleurs de projet, épingles, réglages). Si ta base existe déjà, lance seulement celle-ci : elle ne touche pas aux données.
+   Enfin `supabase/migrations/003_hardening.sql` (sécurité et performance des règles d'accès).
 3. **Project Settings > API** : garde l'onglet ouvert, tu auras besoin de :
    - `Project URL` → `NEXT_PUBLIC_SUPABASE_URL`
    - `anon public` → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
