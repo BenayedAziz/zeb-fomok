@@ -13,6 +13,9 @@
 4. UX inspirée de Mobbin : choisir des écrans de référence (capture, journée, calendrier, revue) et refaire les vues.
 5. Trouver un nom.
 6. Connexions durables aux outils (voir plus bas).
+7. **Partager vers l'appli** depuis TikTok, Instagram, YouTube… (comme Punkt) : le lien arrive en épinglé, l'IA le range.
+   - Android : `share_target` dans `public/manifest.webmanifest` + route qui reçoit le lien. L'appli installée apparaît dans le menu Partager.
+   - iPhone : Safari ne propose pas les applis web dans le menu Partager. Solution : un **Raccourci iOS** « Envoyer au Second Cerveau » (apparaît dans Partager) qui poste le lien sur une route `/api/share` avec un jeton personnel, généré dans les Réglages. Plus tard, une vraie appli iOS avec extension de partage.
 
 ## Coût de l'IA pour les invités
 - Tous les appels passent par **un seul jeton** (le tien) : c'est toi qui paies, les invités n'ont rien à régler.
