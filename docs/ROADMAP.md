@@ -4,14 +4,36 @@
 - En ligne : https://zeb-fomok.vercel.app (Vercel, mise à jour automatique à chaque push sur `main`).
 - Supabase `enbldieuxdgzrzmydgjn` : migrations 001 à 003 appliquées, RLS vérifiée, conseiller sécurité sans alerte. URL de connexion réglée.
 - Variables Vercel posées : Supabase (URL, clé publique, clé service), `NEXT_PUBLIC_SITE_URL`, `IMPORT_SECRET`, `ALLOWED_EMAILS`, `AI_DAILY_LIMIT`.
-- **Pas encore d'IA en ligne** : ni `ANTHROPIC_API_KEY` ni `HF_TOKEN` sur Vercel.
+- IA : le code passe par Hugging Face (`HF_TOKEN`), Anthropic en secours facultatif. **Reste à poser `HF_TOKEN` sur Vercel** : sans lui, le message « L'IA n'est pas encore branchée » s'affiche.
 
 ## Prochaines étapes
 1. Tester son propre compte de bout en bout (connexion, accueil, captures, journée) et noter ce qui coince.
-2. LLM via Hugging Face : `HF_TOKEN` sur Vercel (dictée Whisper), puis brancher le rangement IA sur un modèle Hugging Face (Inference Providers, API compatible OpenAI) à la place ou en secours d'Anthropic. Garder `guardAi()` et le format JSON attendu.
+2. ~~Brancher l'IA sur Hugging Face~~ (fait, `lib/server/ai.ts`). Poser `HF_TOKEN` sur Vercel, tester rangement, entretien et import, ajuster `HF_LLM_MODEL` si le JSON ou le français déçoivent.
 3. Page « Invités » dans les Réglages (liste en base au lieu de `ALLOWED_EMAILS`, sans redéploiement).
 4. UX inspirée de Mobbin : choisir des écrans de référence (capture, journée, calendrier, revue) et refaire les vues.
 5. Trouver un nom.
+6. Connexions durables aux outils (voir plus bas).
+
+## Coût de l'IA pour les invités
+- Tous les appels passent par **un seul jeton** (le tien) : c'est toi qui paies, les invités n'ont rien à régler.
+- Hugging Face : compte gratuit ≈ 0,10 $/mois puis arrêt net ; **PRO 9 $/mois** = 2 $ inclus puis paiement à l'usage au prix du fournisseur. Pour plusieurs invités, PRO est nécessaire. Mettre un plafond dans Billing.
+- Garde-fous dans l'appli : `AI_DAILY_LIMIT` par personne et par jour (60), un import compte 3. Mesurer la dépense réelle sur Billing après une semaine de test, puis ajuster.
+- Plus tard : limite différente pour toi et pour les invités, puis « ma propre clé » (V3).
+
+## Connexions aux outils (Gmail, Outlook, Notion, agendas)
+Objectif : chaque utilisateur branche ses comptes, l'appli récolte et range dans l'inbox (badge IA à valider).
+
+**Étape A, import ponctuel (le code existe déjà).** Il manque seulement les applis OAuth et leurs clés sur Vercel :
+- Notion : notion.so/my-integrations, intégration **publique**, retour `https://zeb-fomok.vercel.app/api/connect/notion/callback` → `NOTION_CLIENT_ID`, `NOTION_CLIENT_SECRET`.
+- Google : console.cloud.google.com, écran de consentement en mode **Test** avec les emails des invités en testeurs, identifiant OAuth « Web », retour `/api/connect/google/callback` → `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
+- Microsoft : portail Entra, inscription d'appli « comptes personnels et professionnels », retour `/api/connect/microsoft/callback` → `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`.
+
+**Étape B, synchro continue.** Table `connections` (user_id, fournisseur, jeton de rafraîchissement **chiffré** avec une clé serveur dédiée, dernière synchro), RLS `user_id = auth.uid()`. Tâche planifiée Vercel Cron : lit les nouveautés depuis la dernière synchro, l'IA en tire les actions et rendez-vous, ils arrivent dans l'inbox. Bouton « Déconnecter » qui efface le jeton.
+
+**Contraintes à connaître :**
+- Gmail (`gmail.readonly`) est un accès **restreint** chez Google : sans vérification, 100 utilisateurs maximum, écran « appli non vérifiée », et en mode Test les accès expirent au bout de 7 jours. Pour ouvrir à tous : vérification Google + audit de sécurité CASA, à renouveler chaque année. Pour un cercle d'amis, le mode Test suffit.
+- Google Agenda (`calendar.readonly`) est seulement « sensible » : vérification, sans audit.
+- Outlook et Notion : pas d'audit imposé ; la vérification d'éditeur Microsoft évite l'avertissement « non vérifié ».
 
 ## V1 (ce dépôt)
 - Capture rangée par l'IA, avec récurrences et badge « IA » à valider

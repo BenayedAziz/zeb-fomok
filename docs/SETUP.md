@@ -23,17 +23,21 @@ Règle d'or : **les clés ne se collent jamais dans le code ni dans un chat**. E
 
 > Supabase envoie les emails de connexion avec un petit quota gratuit (quelques emails par heure). Pour 4 personnes ça suffit ; plus tard, branche un vrai service d'emails (Resend, Brevo) dans Authentication > SMTP.
 
-## 2. Anthropic : l'IA, avec un plafond
+## 2. L'IA : Hugging Face (principal), Anthropic (secours facultatif)
 
-1. Sur console.anthropic.com, crée une clé API → `ANTHROPIC_API_KEY`.
-2. **Settings > Limits** : règle la limite de dépense mensuelle à **20 €** (ou équivalent en $). C'est le vrai garde-fou : au-delà, l'IA s'arrête toute seule.
-3. Dans l'appli, chaque personne a en plus une limite par jour (`AI_DAILY_LIMIT`, 60 par défaut). Un rangement coûte environ 0,2 centime avec le modèle par défaut.
+Un seul jeton Hugging Face fait marcher le rangement, l'entretien d'accueil, l'import et la dictée.
+
+1. Sur huggingface.co, **Settings > Access Tokens > Create new token**, type **Fine-grained**, coche **Make calls to Inference Providers** → `HF_TOKEN`.
+2. Crédits : un compte gratuit a environ 0,10 $ de crédits par mois et s'arrête net au-delà. Avec **PRO (9 $/mois)** : 2 $ inclus par mois, puis paiement à l'usage au prix du fournisseur, sans marge. Règle un plafond de dépense dans **Settings > Billing**.
+3. Modèle : `HF_LLM_MODEL` (par défaut `meta-llama/Llama-3.3-70B-Instruct`), et `HF_LLM_IMPORT_MODEL` pour l'import si tu veux un modèle différent.
+4. Facultatif : `ANTHROPIC_API_KEY` (console.anthropic.com). Si les deux sont posés, Hugging Face passe en premier et Claude prend le relais en cas de panne. `AI_PROVIDER=anthropic` inverse l'ordre. Règle aussi une limite de dépense dans **Settings > Limits** chez Anthropic.
+5. Dans l'appli, chaque personne a en plus une limite par jour (`AI_DAILY_LIMIT`, 60 par défaut). Un import compte pour 3.
 
 ### Dictée vocale (facultatif)
 
 Sans rien configurer, le bouton micro utilise la dictée du navigateur (Chrome, Safari, Edge), en français. Pour une transcription plus fiable avec Whisper :
 
-1. Sur huggingface.co, **Settings > Access Tokens > Create new token**, type **Fine-grained**, coche **Make calls to Inference Providers** → `HF_TOKEN`.
+1. Le même `HF_TOKEN` que pour l'IA suffit.
 2. Facultatif : `HF_ASR_MODEL` (par défaut `openai/whisper-large-v3`). Tu peux mettre un autre modèle de reconnaissance vocale du Hub, ou ton propre modèle déployé avec `HF_ASR_URL` (adresse complète d'un Inference Endpoint).
 3. Chaque dictée compte comme un appel dans la limite IA du jour. L'audio n'est pas stocké.
 
@@ -47,8 +51,8 @@ Sans rien configurer, le bouton micro utilise la dictée du navigateur (Chrome, 
 | `NEXT_PUBLIC_SUPABASE_URL` | étape 1 |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | étape 1 |
 | `SUPABASE_SERVICE_ROLE_KEY` | étape 1 (secret) |
-| `ANTHROPIC_API_KEY` | étape 2 (secret) |
-| `AI_MODEL` | `claude-haiku-4-5` |
+| `HF_TOKEN` | étape 2 (secret) |
+| `ANTHROPIC_API_KEY` | étape 2, facultatif (secret) |
 | `AI_DAILY_LIMIT` | `60` |
 | `ALLOWED_EMAILS` | ton email et ceux de tes 3 amis, séparés par des virgules |
 | `NEXT_PUBLIC_SITE_URL` | `https://ton-site.vercel.app` (après le premier déploiement) |

@@ -8,7 +8,7 @@ export async function POST(req: Request) {
   const { text, ctx } = (await req.json().catch(() => ({}))) as { text?: string; ctx?: Ctx };
   if (!text || !ctx) return NextResponse.json({ error: 'bad_request' }, { status: 400 });
   try {
-    const out = await ask(CLASSIFY_SYSTEM, [{ role: 'user', content: classifyPrompt(text, ctx) }], { maxTokens: 600 });
+    const out = await ask(CLASSIFY_SYSTEM, [{ role: 'user', content: classifyPrompt(text, ctx) }], { maxTokens: 1500 });
     const parsed = parseJson(out);
     if (!parsed) return NextResponse.json({ error: 'invalid_json' }, { status: 502 });
     return NextResponse.json({ result: parsed });

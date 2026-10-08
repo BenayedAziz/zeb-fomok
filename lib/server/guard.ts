@@ -1,5 +1,6 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
+import { llmConfigured } from '@/lib/server/ai';
 import { getAdminSupabase, getServerSupabase, serverSupabaseConfigured } from '@/lib/supabase/server';
 
 export type Guard = { ok: true; userId: string | null } | { ok: false; res: NextResponse };
@@ -10,9 +11,9 @@ const json = (status: number, error: string) => NextResponse.json({ error }, { s
  * Vérifie que la personne est connectée et qu'il lui reste du quota IA aujourd'hui.
  * En mode démo (Supabase pas configuré), on laisse passer : utile en local seulement.
  */
-export async function guardAi(cost = 1, need: 'anthropic' | 'hf' = 'anthropic'): Promise<Guard> {
-  if (need === 'anthropic' && !process.env.ANTHROPIC_API_KEY) return { ok: false, res: json(503, 'ai_not_configured') };
-  if (need === 'hf' && !process.env.HF_TOKEN) return { ok: false, res: json(503, 'voice_not_configured') };
+export async function guardAi(cost = 1, need: 'llm' | 'voice' = 'llm'): Promise<Guard> {
+  if (need === 'llm' && !llmConfigured()) return { ok: false, res: json(503, 'ai_not_configured') };
+  if (need === 'voice' && !process.env.HF_TOKEN) return { ok: false, res: json(503, 'voice_not_configured') };
   if (!serverSupabaseConfigured()) return { ok: true, userId: null };
 
   const supabase = await getServerSupabase();

@@ -13,7 +13,7 @@ const ALLOWED = /^audio\/(webm|ogg|mp4|mpeg|mp3|wav|x-wav|flac|m4a|x-m4a|aac)(;.
  * La clé HF reste côté serveur. Rien n'est stocké.
  */
 export async function POST(req: Request) {
-  const g = await guardAi(1, 'hf');
+  const g = await guardAi(1, 'voice');
   if (!g.ok) return g.res;
 
   const type = req.headers.get('content-type') || '';
