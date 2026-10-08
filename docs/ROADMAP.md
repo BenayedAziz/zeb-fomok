@@ -1,5 +1,18 @@
 # Feuille de route
 
+## État au 8 octobre 2026
+- En ligne : https://zeb-fomok.vercel.app (Vercel, mise à jour automatique à chaque push sur `main`).
+- Supabase `enbldieuxdgzrzmydgjn` : migrations 001 à 003 appliquées, RLS vérifiée, conseiller sécurité sans alerte. URL de connexion réglée.
+- Variables Vercel posées : Supabase (URL, clé publique, clé service), `NEXT_PUBLIC_SITE_URL`, `IMPORT_SECRET`, `ALLOWED_EMAILS`, `AI_DAILY_LIMIT`.
+- **Pas encore d'IA en ligne** : ni `ANTHROPIC_API_KEY` ni `HF_TOKEN` sur Vercel.
+
+## Prochaines étapes
+1. Tester son propre compte de bout en bout (connexion, accueil, captures, journée) et noter ce qui coince.
+2. LLM via Hugging Face : `HF_TOKEN` sur Vercel (dictée Whisper), puis brancher le rangement IA sur un modèle Hugging Face (Inference Providers, API compatible OpenAI) à la place ou en secours d'Anthropic. Garder `guardAi()` et le format JSON attendu.
+3. Page « Invités » dans les Réglages (liste en base au lieu de `ALLOWED_EMAILS`, sans redéploiement).
+4. UX inspirée de Mobbin : choisir des écrans de référence (capture, journée, calendrier, revue) et refaire les vues.
+5. Trouver un nom.
+
 ## V1 (ce dépôt)
 - Capture rangée par l'IA, avec récurrences et badge « IA » à valider
 - Ma journée / Semaine / Mois, glisser-déposer, bouton Planifier
