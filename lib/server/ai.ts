@@ -6,76 +6,31 @@ export function anthropic() {
   if (!client) client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   return client;
 }
-export const MODEL = () => process.env.AI_MODEL || 'claude-haiku-4-5';
-export const IMPORT_MODEL = () => process.env.AI_IMPORT_MODEL || process.env.AI_MODEL || 'claude-haiku-4-5';
-/** Modèle Hugging Face (Inference Providers, API compatible OpenAI). */
-export const HF_MODEL = () => process.env.HF_LLM_MODEL || 'Qwen/Qwen3-235B-A22B-Instruct-2507';
-export const HF_IMPORT_MODEL = () => process.env.HF_LLM_IMPORT_MODEL || HF_MODEL();
+export const MODEL = () => process.env.AI_MODEL || 'claude-haiku-5-5';
+export const IMPORT_MODEL = () => process.env.AI_IMPORT_MODEL || process.env.AI_MODEL || 'claude-haiku-5-5';
 
 export type Msg = { role: 'user' | 'assistant'; content: string };
-export type LlmProvider = 'hf' | 'anthropic';
+type Effort = 'low' | 'medium' | 'high';
 
 /**
- * Fournisseurs disponibles, le principal en premier. AI_PROVIDER force le choix ;
- * sinon Hugging Face si HF_TOKEN est posé, puis Anthropic. L'autre sert de secours.
+ * Les modèles Claude récents réfléchissent avant de répondre ; `effort` règle combien
+ * (et donc le coût). La réflexion compte dans maxTokens : garder de la marge.
+ * Haiku 4.5 ne connaît pas `effort`, on ne l'envoie pas.
  */
-export function llmProviders(): LlmProvider[] {
-  const has: Record<LlmProvider, boolean> = { hf: Boolean(process.env.HF_TOKEN), anthropic: Boolean(process.env.ANTHROPIC_API_KEY) };
-  const first: LlmProvider = process.env.AI_PROVIDER === 'anthropic' ? 'anthropic' : process.env.AI_PROVIDER === 'hf' ? 'hf' : has.hf ? 'hf' : 'anthropic';
-  return ([first, first === 'hf' ? 'anthropic' : 'hf'] as LlmProvider[]).filter((p) => has[p]);
-}
-export const llmConfigured = () => llmProviders().length > 0;
-
-type AskOpts = { model?: string; maxTokens?: number; purpose?: 'default' | 'import' };
-
-async function askAnthropic(system: string, messages: Msg[], opts: AskOpts) {
+export async function ask(system: string, messages: Msg[], opts: { model?: string; maxTokens?: number; effort?: Effort } = {}) {
+  const model = opts.model || MODEL();
   const res = await anthropic().messages.create({
-    model: opts.model || (opts.purpose === 'import' ? IMPORT_MODEL() : MODEL()),
-    max_tokens: opts.maxTokens || 1024,
+    model,
+    max_tokens: opts.maxTokens || 2048,
     system,
     messages,
+    ...(model.startsWith('claude-haiku-4') ? {} : { output_config: { effort: opts.effort || 'low' } }),
   });
   return res.content
     .filter((b) => b.type === 'text')
     .map((b) => (b as { text: string }).text)
     .join('')
     .trim();
-}
-
-async function askHf(system: string, messages: Msg[], opts: AskOpts) {
-  const r = await fetch(process.env.HF_LLM_URL || 'https://router.huggingface.co/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${process.env.HF_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: opts.purpose === 'import' ? HF_IMPORT_MODEL() : HF_MODEL(),
-      max_tokens: opts.maxTokens || 1024,
-      temperature: 0.2,
-      messages: [{ role: 'system', content: system }, ...messages],
-    }),
-  });
-  const body = (await r.json().catch(() => null)) as { choices?: { message?: { content?: string | null } }[]; error?: unknown } | null;
-  const text = body?.choices?.[0]?.message?.content;
-  if (!r.ok || typeof text !== 'string') {
-    const err = typeof body?.error === 'string' ? body.error : JSON.stringify(body?.error ?? '');
-    throw new Error(`hf_${r.status}:${err.slice(0, 200)}`);
-  }
-  // Certains modèles « réfléchissent » à voix haute : on garde seulement la réponse.
-  return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-}
-
-/** Envoie la conversation au fournisseur principal, puis au secours s'il échoue. */
-export async function ask(system: string, messages: Msg[], opts: AskOpts = {}) {
-  const providers = llmProviders();
-  if (!providers.length) throw new Error('ai_not_configured');
-  let last: unknown;
-  for (const p of providers) {
-    try {
-      return p === 'hf' ? await askHf(system, messages, opts) : await askAnthropic(system, messages, opts);
-    } catch (e) {
-      last = e;
-    }
-  }
-  throw last;
 }
 
 /** Lit un objet ou un tableau JSON dans une réponse, même entourée de texte ou d'un bloc de code. */

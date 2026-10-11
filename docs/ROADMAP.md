@@ -4,11 +4,11 @@
 - En ligne : https://zeb-fomok.vercel.app (Vercel, mise à jour automatique à chaque push sur `main`).
 - Supabase `enbldieuxdgzrzmydgjn` : migrations 001 à 003 appliquées, RLS vérifiée, conseiller sécurité sans alerte. URL de connexion réglée.
 - Variables Vercel posées : Supabase (URL, clé publique, clé service), `NEXT_PUBLIC_SITE_URL`, `IMPORT_SECRET`, `ALLOWED_EMAILS`, `AI_DAILY_LIMIT`.
-- IA : le code passe par Hugging Face (`HF_TOKEN`), Anthropic en secours facultatif. **Reste à poser `HF_TOKEN` sur Vercel** : sans lui, le message « L'IA n'est pas encore branchée » s'affiche.
+- IA : Claude (Anthropic), modèle par défaut `claude-haiku-5-5`. Hugging Face sert uniquement à la dictée vocale (Whisper). **Reste à poser `ANTHROPIC_API_KEY` (et `HF_TOKEN` pour la dictée) sur Vercel** : sans clé, le message « L'IA n'est pas encore branchée » s'affiche.
 
 ## Prochaines étapes
 1. Tester son propre compte de bout en bout (connexion, accueil, captures, journée) et noter ce qui coince.
-2. ~~Brancher l'IA sur Hugging Face~~ (fait, `lib/server/ai.ts`). Poser `HF_TOKEN` sur Vercel, tester rangement, entretien et import, ajuster `HF_LLM_MODEL` si le JSON ou le français déçoivent.
+2. IA : poser `ANTHROPIC_API_KEY` et `HF_TOKEN` sur Vercel, tester rangement, entretien, import et dictée. Si l'import manque de finesse, `AI_IMPORT_MODEL=claude-sonnet-5-5`.
 3. Page « Invités » dans les Réglages (liste en base au lieu de `ALLOWED_EMAILS`, sans redéploiement).
 4. UX inspirée de Mobbin : choisir des écrans de référence (capture, journée, calendrier, revue) et refaire les vues.
 5. Trouver un nom.
@@ -19,7 +19,8 @@
 
 ## Coût de l'IA pour les invités
 - Tous les appels passent par **un seul jeton** (le tien) : c'est toi qui paies, les invités n'ont rien à régler.
-- Hugging Face : compte gratuit ≈ 0,10 $/mois puis arrêt net ; **PRO 9 $/mois** = 2 $ inclus puis paiement à l'usage au prix du fournisseur. Pour plusieurs invités, PRO est nécessaire. Mettre un plafond dans Billing.
+- Estimation (5 personnes actives : 10 captures par jour, 4 imports par mois chacune) : Claude Haiku 5.5 ≈ 1 $/mois en tout, Sonnet 5.5 ≈ 18 $, Opus 5.5 ≈ 37 $. Haiku 5.5 avec Sonnet 5.5 pour l'import seulement ≈ 3 $.
+- Plafond de dépense à régler dans la console Anthropic (Settings > Limits).
 - Garde-fous dans l'appli : `AI_DAILY_LIMIT` par personne et par jour (60), un import compte 3. Mesurer la dépense réelle sur Billing après une semaine de test, puis ajuster.
 - Plus tard : limite différente pour toi et pour les invités, puis « ma propre clé » (V3).
 

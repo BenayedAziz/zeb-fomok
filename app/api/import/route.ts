@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { guardAi } from '@/lib/server/guard';
-import { ask, IMPORT_SYSTEM, importPrompt, parseJson, type Ctx } from '@/lib/server/ai';
+import { ask, IMPORT_MODEL, IMPORT_SYSTEM, importPrompt, parseJson, type Ctx } from '@/lib/server/ai';
 import { PROVIDERS, readIcs, readProvider, tokenCookie, unseal, type Provider } from '@/lib/server/connectors';
 
 export const maxDuration = 60;
@@ -35,8 +35,9 @@ export async function POST(req: Request) {
 
   try {
     const out = await ask(IMPORT_SYSTEM, [{ role: 'user', content: importPrompt(LABEL[source] || source, raw, body.ctx) }], {
-      purpose: 'import',
-      maxTokens: 8000,
+      model: IMPORT_MODEL(),
+      maxTokens: 16000,
+      effort: 'medium',
     });
     const parsed = parseJson(out);
     if (!parsed) return NextResponse.json({ error: 'invalid_json' }, { status: 502 });
