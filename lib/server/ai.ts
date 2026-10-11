@@ -9,7 +9,7 @@ export function anthropic() {
 export const MODEL = () => process.env.AI_MODEL || 'claude-haiku-4-5';
 export const IMPORT_MODEL = () => process.env.AI_IMPORT_MODEL || process.env.AI_MODEL || 'claude-haiku-4-5';
 /** Modèle Hugging Face (Inference Providers, API compatible OpenAI). */
-export const HF_MODEL = () => process.env.HF_LLM_MODEL || 'meta-llama/Llama-3.3-70B-Instruct';
+export const HF_MODEL = () => process.env.HF_LLM_MODEL || 'Qwen/Qwen3-235B-A22B-Instruct-2507';
 export const HF_IMPORT_MODEL = () => process.env.HF_LLM_IMPORT_MODEL || HF_MODEL();
 
 export type Msg = { role: 'user' | 'assistant'; content: string };

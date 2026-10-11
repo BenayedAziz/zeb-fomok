@@ -29,7 +29,7 @@ Un seul jeton Hugging Face fait marcher le rangement, l'entretien d'accueil, l'i
 
 1. Sur huggingface.co, **Settings > Access Tokens > Create new token**, type **Fine-grained**, coche **Make calls to Inference Providers** → `HF_TOKEN`.
 2. Crédits : un compte gratuit a environ 0,10 $ de crédits par mois et s'arrête net au-delà. Avec **PRO (9 $/mois)** : 2 $ inclus par mois, puis paiement à l'usage au prix du fournisseur, sans marge. Règle un plafond de dépense dans **Settings > Billing**.
-3. Modèle : `HF_LLM_MODEL` (par défaut `meta-llama/Llama-3.3-70B-Instruct`), et `HF_LLM_IMPORT_MODEL` pour l'import si tu veux un modèle différent.
+3. Modèle : `HF_LLM_MODEL` (par défaut `Qwen/Qwen3-235B-A22B-Instruct-2507`), et `HF_LLM_IMPORT_MODEL` pour l'import si tu veux un modèle différent.
 4. Facultatif : `ANTHROPIC_API_KEY` (console.anthropic.com). Si les deux sont posés, Hugging Face passe en premier et Claude prend le relais en cas de panne. `AI_PROVIDER=anthropic` inverse l'ordre. Règle aussi une limite de dépense dans **Settings > Limits** chez Anthropic.
 5. Dans l'appli, chaque personne a en plus une limite par jour (`AI_DAILY_LIMIT`, 60 par défaut). Un import compte pour 3.
 
