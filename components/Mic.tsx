@@ -83,6 +83,8 @@ export function Mic({ onText, onError, className }: { onText: (t: string, final:
   const sr = useRef<SpeechRec | null>(null);
   const chunks = useRef<Blob[]>([]);
   const unwatch = useRef<() => void>(() => {});
+  // Whisper reste le choix principal ; après un échec, le prochain appui seulement passe par la dictée du navigateur.
+  const backupNext = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -132,8 +134,8 @@ export function Mic({ onText, onError, className }: { onText: (t: string, final:
             // Whisper indisponible : on bascule sur la dictée du navigateur pour la suite.
             const code = [b.error || r.status, b.hfStatus].filter(Boolean).join(' ');
             if (SpeechCtor()) {
-              setMode('browser');
-              return fail(`La transcription n'a pas marché (${code}). Appuie de nouveau sur le micro : je passe à la dictée du navigateur.`);
+              backupNext.current = true;
+              return fail(`La transcription n'a pas marché (${code}). Appuie de nouveau sur le micro et répète : la dictée du navigateur prend le relais pour cette fois.`);
             }
             return fail(`La transcription n'a pas marché (${code}). Tape ton texte pour cette fois.`);
           }
@@ -190,11 +192,14 @@ export function Mic({ onText, onError, className }: { onText: (t: string, final:
   const toggle = () => {
     if (state === 'busy') return;
     if (state === 'rec') {
-      if (mode === 'hf') rec.current?.stop();
+      if (rec.current && rec.current.state !== 'inactive') rec.current.stop();
       else sr.current?.stop();
       return;
     }
-    if (mode === 'hf') startHf();
+    if (mode === 'hf' && backupNext.current) {
+      backupNext.current = false;
+      startBrowser();
+    } else if (mode === 'hf') startHf();
     else startBrowser();
   };
 

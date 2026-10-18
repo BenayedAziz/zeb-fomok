@@ -10,9 +10,13 @@ export async function POST(req: Request) {
   try {
     const out = await ask(CLASSIFY_SYSTEM, [{ role: 'user', content: classifyPrompt(text, ctx) }], { maxTokens: 3000, effort: 'low' });
     const parsed = parseJson(out);
-    if (!parsed) return NextResponse.json({ error: 'invalid_json' }, { status: 502 });
+    if (!parsed) {
+      console.error('classify: réponse IA illisible', out.slice(0, 300));
+      return NextResponse.json({ error: 'invalid_json' }, { status: 502 });
+    }
     return NextResponse.json({ result: parsed });
   } catch (e) {
+    console.error('classify: appel IA en échec', (e as Error).message); // visible dans Vercel > Logs
     return NextResponse.json({ error: 'ai_failed', detail: (e as Error).message }, { status: 502 });
   }
 }

@@ -277,9 +277,12 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
         const body = await res.json().catch(() => ({}));
         if (!res.ok) {
           if (body.error === 'ai_not_configured') setUi((u) => ({ ...u, aiOff: true }));
-          toast({ text: AI_ERRORS[body.error] || "L'IA n'a pas pu ranger cet élément : il reste dans l'inbox." });
+          // Le code entre parenthèses aide à comprendre ce qui coince (crédits, clé, réponse illisible…).
+          const code = [body.error || res.status, typeof body.detail === 'string' ? body.detail.slice(0, 90) : ''].filter(Boolean).join(' : ');
+          toast({ text: AI_ERRORS[body.error] || `L'IA n'a pas pu ranger cet élément, il reste dans l'inbox (${code}).` });
           return;
         }
+        setUi((u) => (u.aiOff ? { ...u, aiOff: false } : u));
         const result = body.result || {};
         const arr: AiItem[] = Array.isArray(result.items) ? result.items : Array.isArray(result) ? result : [result];
         if (storeRef.current.get().items[id]) applyAI(id, arr);
@@ -301,13 +304,10 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       const t = text.trim();
       if (!t) return;
       const it = storeRef.current.addItem({ title: t, raw: t, status: 'inbox', ...(extra || {}) });
-      if (ui.aiOff) {
-        toast({ text: "Ajouté à l'inbox", actions: [{ label: 'Voir', run: () => setUi((u) => ({ ...u, drawer: { type: 'item', id: it.id } })) }] });
-        return;
-      }
+      // On tente toujours l'IA : si la clé a été ajoutée depuis l'ouverture de l'onglet, ça repart tout seul.
       await aiSort(it.id);
     },
-    [aiSort, toast, ui.aiOff],
+    [aiSort],
   );
 
   const removeItem = useCallback(
