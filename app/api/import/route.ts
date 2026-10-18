@@ -40,11 +40,15 @@ export async function POST(req: Request) {
       effort: 'medium',
     });
     const parsed = parseJson(out);
-    if (!parsed) return NextResponse.json({ error: 'invalid_json' }, { status: 502 });
+    if (!parsed) {
+      console.error('import: réponse IA illisible', out.slice(0, 300));
+      return NextResponse.json({ error: 'invalid_json' }, { status: 502 });
+    }
     const res = NextResponse.json({ proposals: parsed, source });
     if (PROVIDERS.includes(source as Provider)) res.cookies.delete(tokenCookie(source as Provider)); // accès effacé après usage
     return res;
   } catch (e) {
+    console.error('import: appel IA en échec', (e as Error).message); // visible dans Vercel > Logs
     return NextResponse.json({ error: 'ai_failed', detail: (e as Error).message }, { status: 502 });
   }
 }

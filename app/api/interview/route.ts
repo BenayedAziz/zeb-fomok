@@ -14,7 +14,10 @@ export async function POST(req: Request) {
       const transcript = msgs.map((m) => `${m.role === 'user' ? 'Personne' : 'Assistant'} : ${m.content}`).join('\n\n');
       const out = await ask(SUMMARY_SYSTEM, [{ role: 'user', content: summaryPrompt(transcript, today || new Date().toISOString().slice(0, 10)) }], { maxTokens: 6000, effort: 'medium' });
       const parsed = parseJson(out);
-      if (!parsed) return NextResponse.json({ error: 'invalid_json' }, { status: 502 });
+      if (!parsed) {
+      console.error('interview: réponse IA illisible', out.slice(0, 300));
+      return NextResponse.json({ error: 'invalid_json' }, { status: 502 });
+    }
       return NextResponse.json({ summary: parsed });
     }
     // L'API exige que la conversation commence par la personne : on retire le message d'accueil.
@@ -22,6 +25,7 @@ export async function POST(req: Request) {
     const reply = await ask(INTERVIEW_SYSTEM, conv, { maxTokens: 1500, effort: 'low' });
     return NextResponse.json({ reply });
   } catch (e) {
+    console.error('interview: appel IA en échec', (e as Error).message); // visible dans Vercel > Logs
     return NextResponse.json({ error: 'ai_failed', detail: (e as Error).message }, { status: 502 });
   }
 }
