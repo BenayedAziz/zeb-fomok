@@ -22,21 +22,6 @@ interface SpeechRec {
 const SpeechCtor = () =>
   typeof window === 'undefined' ? null : ((window as unknown as { SpeechRecognition?: new () => SpeechRec; webkitSpeechRecognition?: new () => SpeechRec }).SpeechRecognition || (window as unknown as { webkitSpeechRecognition?: new () => SpeechRec }).webkitSpeechRecognition || null);
 
-/* Whisper refusé faute de crédits (402) : on s'en souvient un jour sur cet appareil pour ne pas échouer à chaque fois. */
-const WHISPER_OFF_KEY = 'sc_whisper_off_until';
-const whisperOff = () => {
-  try {
-    return Number(localStorage.getItem(WHISPER_OFF_KEY) || 0) > Date.now();
-  } catch {
-    return false;
-  }
-};
-const turnWhisperOff = () => {
-  try {
-    localStorage.setItem(WHISPER_OFF_KEY, String(Date.now() + 864e5));
-  } catch {}
-};
-
 /* Fin de parole détectée : après avoir entendu de la voix, ce temps de silence arrête l'enregistrement. */
 const SILENCE_MS = 1600;
 const NOTHING_MS = 8000; // rien entendu du tout : on arrête
@@ -98,14 +83,15 @@ export function Mic({ onText, onError, className }: { onText: (t: string, final:
   const sr = useRef<SpeechRec | null>(null);
   const chunks = useRef<Blob[]>([]);
   const unwatch = useRef<() => void>(() => {});
+  // Whisper reste le choix principal ; après un échec, le prochain appui seulement passe par la dictée du navigateur.
+  const backupNext = useRef(false);
 
   useEffect(() => {
     let alive = true;
     serverStatus().then((s) => {
       if (!alive) return;
       const canRecord = typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined';
-      const browser = SpeechCtor() ? 'browser' : null;
-      setMode(s.voice && canRecord && !(whisperOff() && browser) ? 'hf' : browser);
+      setMode(s.voice && canRecord ? 'hf' : SpeechCtor() ? 'browser' : null);
     });
     return () => {
       alive = false;
@@ -148,9 +134,8 @@ export function Mic({ onText, onError, className }: { onText: (t: string, final:
             // Whisper indisponible : on bascule sur la dictée du navigateur pour la suite.
             const code = [b.error || r.status, b.hfStatus].filter(Boolean).join(' ');
             if (SpeechCtor()) {
-              if (b.hfStatus === 402) turnWhisperOff();
-              setMode('browser');
-              return fail(`La transcription n'a pas marché (${code}). Appuie de nouveau sur le micro : je passe à la dictée du navigateur.`);
+              backupNext.current = true;
+              return fail(`La transcription n'a pas marché (${code}). Appuie de nouveau sur le micro et répète : la dictée du navigateur prend le relais pour cette fois.`);
             }
             return fail(`La transcription n'a pas marché (${code}). Tape ton texte pour cette fois.`);
           }
@@ -207,11 +192,14 @@ export function Mic({ onText, onError, className }: { onText: (t: string, final:
   const toggle = () => {
     if (state === 'busy') return;
     if (state === 'rec') {
-      if (mode === 'hf') rec.current?.stop();
+      if (rec.current && rec.current.state !== 'inactive') rec.current.stop();
       else sr.current?.stop();
       return;
     }
-    if (mode === 'hf') startHf();
+    if (mode === 'hf' && backupNext.current) {
+      backupNext.current = false;
+      startBrowser();
+    } else if (mode === 'hf') startHf();
     else startBrowser();
   };
 
