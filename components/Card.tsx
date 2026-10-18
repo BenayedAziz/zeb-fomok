@@ -36,7 +36,8 @@ export function Card({ it, o = {} }: { it: Item; o?: CardOpts }) {
   const done = it.status === 'done';
   const ev = isEvent(it);
   const pending = ui.pending[it.id];
-  const tick = !ev && !o.ghost && it.status !== 'someday' && it.status !== 'inbox';
+  // Une tâche se coche quand elle est faite, un événement quand il est passé.
+  const tick = !o.ghost && (ev || (it.status !== 'someday' && it.status !== 'inbox'));
   const n = it.date ? diffDays(it.date, todayIso()) : 0;
   const color = colorOfItem(data, it);
 
@@ -49,7 +50,7 @@ export function Card({ it, o = {} }: { it: Item; o?: CardOpts }) {
 
   return (
     <div
-      className={`card${done ? ' done' : ''}${pending ? ' pending' : ''}${ev ? ' event' : ''}${o.ghost ? ' ghost' : ''}`}
+      className={`card${done ? ' done' : ''}${pending ? ' pending' : ''}${ev ? ' event' : ''}${o.ghost ? ' ghost' : ''}${ui.justDone[it.id] ? ' pop' : ''}`}
       style={{ '--pc': color } as React.CSSProperties}
       draggable={o.drag !== false && !o.ghost}
       data-drag={o.ghost ? undefined : it.id}
@@ -66,12 +67,12 @@ export function Card({ it, o = {} }: { it: Item; o?: CardOpts }) {
     >
       {tick ? (
         <button
-          className="ck"
+          className={`ck${ev ? ' ev' : ''}`}
           onClick={(e) => {
             e.stopPropagation();
             toggleDone(it.id);
           }}
-          aria-label={done ? 'Marquer à faire' : 'Marquer fait'}
+          aria-label={done ? (ev ? 'Marquer à venir' : 'Marquer à faire') : ev ? 'Marquer terminé' : 'Marquer fait'}
         >
           <Icon name="check" />
         </button>

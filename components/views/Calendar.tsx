@@ -250,7 +250,7 @@ function layout(entries: Entry[]): Placed[] {
 
 function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
   const store = useStore();
-  const { openDrawer, toggleDone, toast } = useUI();
+  const { ui, openDrawer, toggleDone, toast } = useUI();
   const it = p.e.it;
   const ghost = p.e.ghost;
   const ev = isEvent(it);
@@ -300,7 +300,7 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
 
   return (
     <div
-      className={`tblock${ev ? ' event' : ''}${ghost ? ' ghost' : ''}${it.status === 'done' ? ' done' : ''}${drag ? ' dragging' : ''}`}
+      className={`tblock${ev ? ' event' : ''}${ghost ? ' ghost' : ''}${it.status === 'done' ? ' done' : ''}${drag ? ' dragging' : ''}${ui.justDone[it.id] ? ' pop' : ''}`}
       style={{ top, height, left: `calc(${(p.lane / p.lanes) * 100}% + 2px)`, width: `calc(${100 / p.lanes}% - 4px)`, transform: drag?.dx ? `translateX(${drag.dx}px)` : undefined, '--pc': colorOfItem(store.data, it) } as React.CSSProperties}
       onPointerDown={begin('move')}
       onPointerMove={move}
@@ -317,15 +317,15 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
       title={ghost ? 'Répétition à venir' : undefined}
     >
       <div className="tb-row">
-        {!ev && !ghost && (
+        {!ghost && (
           <button
-            className="ck sm"
+            className={`ck sm${ev ? ' ev' : ''}`}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               toggleDone(it.id);
             }}
-            aria-label="Marquer fait"
+            aria-label={it.status === 'done' ? 'Décocher' : ev ? 'Marquer terminé' : 'Marquer fait'}
           >
             <Icon name="check" />
           </button>
@@ -400,7 +400,7 @@ function AllDay({ entries }: { entries: Entry[] }) {
   return (
     <div className="allday">
       {evs.map((e) => (
-        <button key={`${e.it.id}-${e.date}`} className={`ad-chip${e.ghost ? ' ghost' : ''}`} style={{ '--pc': colorOfItem(data, e.it) } as React.CSSProperties} onClick={() => openDrawer({ type: 'item', id: e.it.id })}>
+        <button key={`${e.it.id}-${e.date}`} className={`ad-chip${e.ghost ? ' ghost' : ''}${e.it.status === 'done' ? ' done' : ''}`} style={{ '--pc': colorOfItem(data, e.it) } as React.CSSProperties} onClick={() => openDrawer({ type: 'item', id: e.it.id })}>
           {e.it.title}
           {e.it.recurrence ? ' ↻' : ''}
         </button>
