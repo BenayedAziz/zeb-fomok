@@ -295,7 +295,10 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
           if (body.error === 'ai_not_configured') setUi((u) => ({ ...u, aiOff: true }));
           // Le code entre parenthèses aide à comprendre ce qui coince (crédits, clé, réponse illisible…).
           const code = [body.error || res.status, typeof body.detail === 'string' ? body.detail.slice(0, 90) : ''].filter(Boolean).join(' : ');
-          toast({ text: AI_ERRORS[body.error] || `L'IA n'a pas pu ranger cet élément, il reste dans l'inbox (${code}).` });
+          toast({
+            text: AI_ERRORS[body.error] || `L'IA n'a pas pu ranger cet élément, il reste dans l'inbox (${code}).`,
+            actions: [{ label: 'Réessayer', run: () => aiSortRef.current(id) }],
+          });
           return;
         }
         setUi((u) => (u.aiOff ? { ...u, aiOff: false } : u));
@@ -340,6 +343,9 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       })
       .catch(() => {});
   }, [store.ready, aiSort]);
+
+  const aiSortRef = useRef(aiSort);
+  aiSortRef.current = aiSort;
 
   const capture = useCallback(
     async (text: string, extra?: Partial<Item>) => {
