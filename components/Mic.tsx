@@ -73,7 +73,16 @@ export function Mic({ onText, onError, className }: { onText: (t: string, final:
             r = await fetch('/api/transcribe', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
           }
           const b = await r.json().catch(() => ({}));
-          if (!r.ok || !b.text) return fail(b.error === 'daily_limit' ? 'Limite du jour atteinte.' : "La transcription n'a pas marché. Réessaie ou tape ton texte.");
+          if (!r.ok || !b.text) {
+            if (b.error === 'daily_limit') return fail('Limite du jour atteinte.');
+            // Whisper indisponible : on bascule sur la dictée du navigateur pour la suite.
+            const code = [b.error || r.status, b.hfStatus].filter(Boolean).join(' ');
+            if (SpeechCtor()) {
+              setMode('browser');
+              return fail(`La transcription n'a pas marché (${code}). Appuie de nouveau sur le micro : je passe à la dictée du navigateur.`);
+            }
+            return fail(`La transcription n'a pas marché (${code}). Tape ton texte pour cette fois.`);
+          }
           onText(b.text, true);
           setState('idle');
         } catch {
