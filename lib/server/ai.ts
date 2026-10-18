@@ -33,6 +33,33 @@ export async function ask(system: string, messages: Msg[], opts: { model?: strin
     .trim();
 }
 
+/**
+ * Petit test de l'IA (quelques jetons), mis en cache 5 minutes : dit si la clé, les crédits et le modèle répondent.
+ * Ne renvoie qu'un code court, jamais le message complet.
+ */
+let health: { at: number; code: string } | null = null;
+export async function aiHealth(): Promise<string> {
+  if (!process.env.ANTHROPIC_API_KEY) return 'no_key';
+  if (health && Date.now() - health.at < 300_000) return health.code;
+  let code = 'ok';
+  try {
+    await anthropic().messages.create({ model: MODEL(), max_tokens: 16, messages: [{ role: 'user', content: 'Réponds OK.' }] });
+  } catch (e) {
+    const err = e as { status?: number; message?: string };
+    const msg = (err.message || '').toLowerCase();
+    code =
+      msg.includes('credit balance') ? 'no_credit'
+      : err.status === 401 ? 'bad_key'
+      : err.status === 403 ? 'forbidden'
+      : err.status === 404 || msg.includes('model') ? 'bad_model'
+      : err.status === 429 ? 'rate_limited'
+      : `error_${err.status ?? 'network'}`;
+    console.error('aiHealth', err.status, err.message);
+  }
+  health = { at: Date.now(), code };
+  return code;
+}
+
 /** Lit un objet ou un tableau JSON dans une réponse, même entourée de texte ou d'un bloc de code. */
 export function parseJson<T = unknown>(text: string): T | null {
   const tryParse = (s: string) => {

@@ -1,5 +1,5 @@
 'use client';
-import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import type { AiItem, Data, Item } from '@/lib/types';
 import { PR, REC, ST, contextsOf, domainsSorted, freeColor, projectsSorted, recLabel } from '@/lib/gtd';
@@ -117,6 +117,22 @@ function itemFromAi(d: Data, r: AiItem): Partial<Item> {
   }
   return p;
 }
+
+/* Éléments de l'inbox déjà proposés à l'IA au chargement, pour ne pas les renvoyer en boucle. */
+const AUTO_KEY = 'sc_ai_auto_tried';
+const readTried = (): string[] => {
+  try {
+    const v = JSON.parse(localStorage.getItem(AUTO_KEY) || '[]');
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+};
+const writeTried = (ids: string[]) => {
+  try {
+    localStorage.setItem(AUTO_KEY, JSON.stringify(ids.slice(-300)));
+  } catch {}
+};
 
 export function UIProvider({ children }: { children: React.ReactNode }) {
   const store = useStore();
@@ -279,7 +295,10 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
           if (body.error === 'ai_not_configured') setUi((u) => ({ ...u, aiOff: true }));
           // Le code entre parenthèses aide à comprendre ce qui coince (crédits, clé, réponse illisible…).
           const code = [body.error || res.status, typeof body.detail === 'string' ? body.detail.slice(0, 90) : ''].filter(Boolean).join(' : ');
-          toast({ text: AI_ERRORS[body.error] || `L'IA n'a pas pu ranger cet élément, il reste dans l'inbox (${code}).` });
+          toast({
+            text: AI_ERRORS[body.error] || `L'IA n'a pas pu ranger cet élément, il reste dans l'inbox (${code}).`,
+            actions: [{ label: 'Réessayer', run: () => aiSortRef.current(id) }],
+          });
           return;
         }
         setUi((u) => (u.aiOff ? { ...u, aiOff: false } : u));
@@ -298,6 +317,35 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     },
     [applyAI, toast],
   );
+
+  /**
+   * À l'ouverture : ce qui attend dans l'inbox sans être passé par l'IA (capturé avant que l'IA soit branchée,
+   * ou quand elle a échoué) est rangé automatiquement, une seule tentative par élément.
+   */
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (!store.ready || autoRan.current) return;
+    autoRan.current = true;
+    const tried = readTried();
+    const waiting = Object.values(storeRef.current.get().items)
+      .filter((i) => i.status === 'inbox' && !i.aiSorted && !tried.includes(i.id))
+      .slice(0, 10);
+    if (!waiting.length) return;
+    fetch('/api/connect/status')
+      .then((r) => (r.ok ? r.json() : {}))
+      .then(async (s: { ai?: boolean }) => {
+        if (!s.ai) return;
+        for (const it of waiting) {
+          tried.push(it.id);
+          writeTried(tried);
+          await aiSort(it.id);
+        }
+      })
+      .catch(() => {});
+  }, [store.ready, aiSort]);
+
+  const aiSortRef = useRef(aiSort);
+  aiSortRef.current = aiSort;
 
   const capture = useCallback(
     async (text: string, extra?: Partial<Item>) => {
