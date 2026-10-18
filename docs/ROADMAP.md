@@ -16,6 +16,11 @@
 7. **Partager vers l'appli** depuis TikTok, Instagram, YouTube… (comme Punkt) : le lien arrive en épinglé, l'IA le range.
    - Android : `share_target` dans `public/manifest.webmanifest` + route qui reçoit le lien. L'appli installée apparaît dans le menu Partager.
    - iPhone : Safari ne propose pas les applis web dans le menu Partager. Solution : un **Raccourci iOS** « Envoyer au Second Cerveau » (apparaît dans Partager) qui poste le lien sur une route `/api/share` avec un jeton personnel, généré dans les Réglages. Plus tard, une vraie appli iOS avec extension de partage.
+8. **Capture vocale instantanée** (comme Wispr Flow) : une touche ou un geste, on parle, c'est rangé.
+   - Dans l'appli : raccourci clavier pour lancer le micro, et lien `/app?voice=1` qui ouvre directement l'enregistrement.
+   - Écran d'accueil du téléphone : raccourci « Capture vocale » dans `manifest.webmanifest` (appui long sur l'icône) qui ouvre `/app?voice=1`.
+   - iPhone sans ouvrir l'appli : Raccourci iOS « Dicter le texte » puis envoi à `/api/share` (même route et même jeton personnel que le partage), à mettre sur le bouton Action ou le double tapotement au dos.
+   - Mac / PC, touche globale même appli fermée : un navigateur ne peut pas écouter le clavier hors de sa page. D'abord un Raccourci macOS avec raccourci clavier (même route), plus tard une petite appli de bureau (Tauri).
 
 ## Coût de l'IA pour les invités
 - Tous les appels passent par **un seul jeton** (le tien) : c'est toi qui paies, les invités n'ont rien à régler.
