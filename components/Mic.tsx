@@ -22,6 +22,21 @@ interface SpeechRec {
 const SpeechCtor = () =>
   typeof window === 'undefined' ? null : ((window as unknown as { SpeechRecognition?: new () => SpeechRec; webkitSpeechRecognition?: new () => SpeechRec }).SpeechRecognition || (window as unknown as { webkitSpeechRecognition?: new () => SpeechRec }).webkitSpeechRecognition || null);
 
+/* Whisper refusé faute de crédits (402) : on s'en souvient un jour sur cet appareil pour ne pas échouer à chaque fois. */
+const WHISPER_OFF_KEY = 'sc_whisper_off_until';
+const whisperOff = () => {
+  try {
+    return Number(localStorage.getItem(WHISPER_OFF_KEY) || 0) > Date.now();
+  } catch {
+    return false;
+  }
+};
+const turnWhisperOff = () => {
+  try {
+    localStorage.setItem(WHISPER_OFF_KEY, String(Date.now() + 864e5));
+  } catch {}
+};
+
 /* Fin de parole détectée : après avoir entendu de la voix, ce temps de silence arrête l'enregistrement. */
 const SILENCE_MS = 1600;
 const NOTHING_MS = 8000; // rien entendu du tout : on arrête
@@ -89,7 +104,8 @@ export function Mic({ onText, onError, className }: { onText: (t: string, final:
     serverStatus().then((s) => {
       if (!alive) return;
       const canRecord = typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined';
-      setMode(s.voice && canRecord ? 'hf' : SpeechCtor() ? 'browser' : null);
+      const browser = SpeechCtor() ? 'browser' : null;
+      setMode(s.voice && canRecord && !(whisperOff() && browser) ? 'hf' : browser);
     });
     return () => {
       alive = false;
@@ -132,6 +148,7 @@ export function Mic({ onText, onError, className }: { onText: (t: string, final:
             // Whisper indisponible : on bascule sur la dictée du navigateur pour la suite.
             const code = [b.error || r.status, b.hfStatus].filter(Boolean).join(' ');
             if (SpeechCtor()) {
+              if (b.hfStatus === 402) turnWhisperOff();
               setMode('browser');
               return fail(`La transcription n'a pas marché (${code}). Appuie de nouveau sur le micro : je passe à la dictée du navigateur.`);
             }
