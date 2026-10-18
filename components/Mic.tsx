@@ -22,6 +22,56 @@ interface SpeechRec {
 const SpeechCtor = () =>
   typeof window === 'undefined' ? null : ((window as unknown as { SpeechRecognition?: new () => SpeechRec; webkitSpeechRecognition?: new () => SpeechRec }).SpeechRecognition || (window as unknown as { webkitSpeechRecognition?: new () => SpeechRec }).webkitSpeechRecognition || null);
 
+/* Fin de parole détectée : après avoir entendu de la voix, ce temps de silence arrête l'enregistrement. */
+const SILENCE_MS = 1600;
+const NOTHING_MS = 8000; // rien entendu du tout : on arrête
+const MAX_MS = 120000;
+
+/**
+ * Écoute le volume du micro et appelle onEnd quand la personne a fini de parler.
+ * Le seuil s'adapte au bruit ambiant mesuré pendant le premier quart de seconde.
+ */
+function watchSilence(stream: MediaStream, onEnd: (heard: boolean) => void) {
+  const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctx) return () => {};
+  const ctx = new Ctx();
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 2048;
+  ctx.createMediaStreamSource(stream).connect(analyser);
+  const buf = new Float32Array(analyser.fftSize);
+  const start = Date.now();
+  let floor = 0;
+  let samples = 0;
+  let heard = false;
+  let lastVoice = start;
+  let done = false;
+  const timer = window.setInterval(() => {
+    analyser.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (const v of buf) sum += v * v;
+    const rms = Math.sqrt(sum / buf.length);
+    const now = Date.now();
+    if (now - start < 250) {
+      floor = (floor * samples + rms) / ++samples;
+      return;
+    }
+    if (rms > Math.max(0.012, floor * 2.5)) {
+      heard = true;
+      lastVoice = now;
+    }
+    const end = (heard && now - lastVoice > SILENCE_MS) || (!heard && now - start > NOTHING_MS) || now - start > MAX_MS;
+    if (end) stop(true);
+  }, 100);
+  const stop = (fire: boolean) => {
+    if (done) return;
+    done = true;
+    window.clearInterval(timer);
+    ctx.close().catch(() => {});
+    if (fire) onEnd(heard);
+  };
+  return () => stop(false);
+}
+
 /**
  * Bouton micro. Avec une clé Hugging Face côté serveur : on enregistre puis Whisper transcrit.
  * Sinon : la reconnaissance vocale du navigateur (Chrome, Safari, Edge), en français.
@@ -32,6 +82,7 @@ export function Mic({ onText, onError, className }: { onText: (t: string, final:
   const rec = useRef<MediaRecorder | null>(null);
   const sr = useRef<SpeechRec | null>(null);
   const chunks = useRef<Blob[]>([]);
+  const unwatch = useRef<() => void>(() => {});
 
   useEffect(() => {
     let alive = true;
@@ -42,6 +93,7 @@ export function Mic({ onText, onError, className }: { onText: (t: string, final:
     });
     return () => {
       alive = false;
+      unwatch.current();
       rec.current?.stream.getTracks().forEach((t) => t.stop());
       sr.current?.stop();
     };
@@ -60,11 +112,13 @@ export function Mic({ onText, onError, className }: { onText: (t: string, final:
       const type = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find((t) => MediaRecorder.isTypeSupported(t)) || '';
       const mr = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
       chunks.current = [];
+      let silent = false;
       mr.ondataavailable = (e) => e.data.size && chunks.current.push(e.data);
       mr.onstop = async () => {
+        unwatch.current();
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunks.current, { type: (mr.mimeType || 'audio/webm').split(';')[0] });
-        if (blob.size < 1200) return fail('Rien entendu. Garde le bouton actif pendant que tu parles.');
+        if (silent || blob.size < 1200) return fail("Rien entendu. Appuie sur le micro, puis parle : l'enregistrement s'arrête tout seul quand tu as fini.");
         setState('busy');
         try {
           let r = await fetch('/api/transcribe', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
@@ -91,6 +145,11 @@ export function Mic({ onText, onError, className }: { onText: (t: string, final:
       };
       rec.current = mr;
       mr.start();
+      // S'arrête tout seul quand tu as fini de parler, comme ChatGPT ou Gemini.
+      unwatch.current = watchSilence(stream, (heard) => {
+        silent = !heard;
+        if (mr.state !== 'inactive') mr.stop();
+      });
       setState('rec');
     } catch {
       fail("Autorise le micro dans ton navigateur pour dicter.");
@@ -105,7 +164,10 @@ export function Mic({ onText, onError, className }: { onText: (t: string, final:
     r.interimResults = true;
     r.continuous = true;
     let finalTxt = '';
+    let pause = window.setTimeout(() => r.stop(), NOTHING_MS);
     r.onresult = (e) => {
+      window.clearTimeout(pause);
+      pause = window.setTimeout(() => r.stop(), SILENCE_MS + 400);
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i];
@@ -116,6 +178,7 @@ export function Mic({ onText, onError, className }: { onText: (t: string, final:
     };
     r.onerror = (e) => fail(e.error === 'not-allowed' ? 'Autorise le micro dans ton navigateur pour dicter.' : 'Dictée interrompue.');
     r.onend = () => {
+      window.clearTimeout(pause);
       setState('idle');
       if (finalTxt.trim()) onText(finalTxt.trim(), true);
     };
