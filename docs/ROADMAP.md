@@ -4,14 +4,45 @@
 - En ligne : https://zeb-fomok.vercel.app (Vercel, mise à jour automatique à chaque push sur `main`).
 - Supabase `enbldieuxdgzrzmydgjn` : migrations 001 à 003 appliquées, RLS vérifiée, conseiller sécurité sans alerte. URL de connexion réglée.
 - Variables Vercel posées : Supabase (URL, clé publique, clé service), `NEXT_PUBLIC_SITE_URL`, `IMPORT_SECRET`, `ALLOWED_EMAILS`, `AI_DAILY_LIMIT`.
-- **Pas encore d'IA en ligne** : ni `ANTHROPIC_API_KEY` ni `HF_TOKEN` sur Vercel.
+- IA : Claude (Anthropic), modèle par défaut `claude-haiku-5-5`. Hugging Face sert uniquement à la dictée vocale (Whisper). **Reste à poser `ANTHROPIC_API_KEY` (et `HF_TOKEN` pour la dictée) sur Vercel** : sans clé, le message « L'IA n'est pas encore branchée » s'affiche.
 
 ## Prochaines étapes
 1. Tester son propre compte de bout en bout (connexion, accueil, captures, journée) et noter ce qui coince.
-2. LLM via Hugging Face : `HF_TOKEN` sur Vercel (dictée Whisper), puis brancher le rangement IA sur un modèle Hugging Face (Inference Providers, API compatible OpenAI) à la place ou en secours d'Anthropic. Garder `guardAi()` et le format JSON attendu.
+2. IA : poser `ANTHROPIC_API_KEY` et `HF_TOKEN` sur Vercel, tester rangement, entretien, import et dictée. Si l'import manque de finesse, `AI_IMPORT_MODEL=claude-sonnet-5-5`.
 3. Page « Invités » dans les Réglages (liste en base au lieu de `ALLOWED_EMAILS`, sans redéploiement).
 4. UX inspirée de Mobbin : choisir des écrans de référence (capture, journée, calendrier, revue) et refaire les vues.
 5. Trouver un nom.
+6. Connexions durables aux outils (voir plus bas).
+7. **Partager vers l'appli** depuis TikTok, Instagram, YouTube… (comme Punkt) : le lien arrive en épinglé, l'IA le range.
+   - Android : `share_target` dans `public/manifest.webmanifest` + route qui reçoit le lien. L'appli installée apparaît dans le menu Partager.
+   - iPhone : Safari ne propose pas les applis web dans le menu Partager. Solution : un **Raccourci iOS** « Envoyer au Second Cerveau » (apparaît dans Partager) qui poste le lien sur une route `/api/share` avec un jeton personnel, généré dans les Réglages. Plus tard, une vraie appli iOS avec extension de partage.
+8. **Capture vocale instantanée** (comme Wispr Flow) : une touche ou un geste, on parle, c'est rangé.
+   - Dans l'appli : raccourci clavier pour lancer le micro, et lien `/app?voice=1` qui ouvre directement l'enregistrement.
+   - Écran d'accueil du téléphone : raccourci « Capture vocale » dans `manifest.webmanifest` (appui long sur l'icône) qui ouvre `/app?voice=1`.
+   - iPhone sans ouvrir l'appli : Raccourci iOS « Dicter le texte » puis envoi à `/api/share` (même route et même jeton personnel que le partage), à mettre sur le bouton Action ou le double tapotement au dos.
+   - Mac / PC, touche globale même appli fermée : un navigateur ne peut pas écouter le clavier hors de sa page. D'abord un Raccourci macOS avec raccourci clavier (même route), plus tard une petite appli de bureau (Tauri).
+
+## Coût de l'IA pour les invités
+- Tous les appels passent par **un seul jeton** (le tien) : c'est toi qui paies, les invités n'ont rien à régler.
+- Estimation (5 personnes actives : 10 captures par jour, 4 imports par mois chacune) : Claude Haiku 5.5 ≈ 1 $/mois en tout, Sonnet 5.5 ≈ 18 $, Opus 5.5 ≈ 37 $. Haiku 5.5 avec Sonnet 5.5 pour l'import seulement ≈ 3 $.
+- Plafond de dépense à régler dans la console Anthropic (Settings > Limits).
+- Garde-fous dans l'appli : `AI_DAILY_LIMIT` par personne et par jour (60), un import compte 3. Mesurer la dépense réelle sur Billing après une semaine de test, puis ajuster.
+- Plus tard : limite différente pour toi et pour les invités, puis « ma propre clé » (V3).
+
+## Connexions aux outils (Gmail, Outlook, Notion, agendas)
+Objectif : chaque utilisateur branche ses comptes, l'appli récolte et range dans l'inbox (badge IA à valider).
+
+**Étape A, import ponctuel (le code existe déjà).** Il manque seulement les applis OAuth et leurs clés sur Vercel :
+- Notion : notion.so/my-integrations, intégration **publique**, retour `https://zeb-fomok.vercel.app/api/connect/notion/callback` → `NOTION_CLIENT_ID`, `NOTION_CLIENT_SECRET`.
+- Google : console.cloud.google.com, écran de consentement en mode **Test** avec les emails des invités en testeurs, identifiant OAuth « Web », retour `/api/connect/google/callback` → `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
+- Microsoft : portail Entra, inscription d'appli « comptes personnels et professionnels », retour `/api/connect/microsoft/callback` → `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`.
+
+**Étape B, synchro continue.** Table `connections` (user_id, fournisseur, jeton de rafraîchissement **chiffré** avec une clé serveur dédiée, dernière synchro), RLS `user_id = auth.uid()`. Tâche planifiée Vercel Cron : lit les nouveautés depuis la dernière synchro, l'IA en tire les actions et rendez-vous, ils arrivent dans l'inbox. Bouton « Déconnecter » qui efface le jeton.
+
+**Contraintes à connaître :**
+- Gmail (`gmail.readonly`) est un accès **restreint** chez Google : sans vérification, 100 utilisateurs maximum, écran « appli non vérifiée », et en mode Test les accès expirent au bout de 7 jours. Pour ouvrir à tous : vérification Google + audit de sécurité CASA, à renouveler chaque année. Pour un cercle d'amis, le mode Test suffit.
+- Google Agenda (`calendar.readonly`) est seulement « sensible » : vérification, sans audit.
+- Outlook et Notion : pas d'audit imposé ; la vérification d'éditeur Microsoft évite l'avertissement « non vérifié ».
 
 ## V1 (ce dépôt)
 - Capture rangée par l'IA, avec récurrences et badge « IA » à valider

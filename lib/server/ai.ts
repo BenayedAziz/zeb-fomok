@@ -6,17 +6,25 @@ export function anthropic() {
   if (!client) client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   return client;
 }
-export const MODEL = () => process.env.AI_MODEL || 'claude-haiku-4-5';
-export const IMPORT_MODEL = () => process.env.AI_IMPORT_MODEL || process.env.AI_MODEL || 'claude-haiku-4-5';
+export const MODEL = () => process.env.AI_MODEL || 'claude-haiku-5-5';
+export const IMPORT_MODEL = () => process.env.AI_IMPORT_MODEL || process.env.AI_MODEL || 'claude-haiku-5-5';
 
 export type Msg = { role: 'user' | 'assistant'; content: string };
+type Effort = 'low' | 'medium' | 'high';
 
-export async function ask(system: string, messages: Msg[], opts: { model?: string; maxTokens?: number } = {}) {
+/**
+ * Les modèles Claude récents réfléchissent avant de répondre ; `effort` règle combien
+ * (et donc le coût). La réflexion compte dans maxTokens : garder de la marge.
+ * Haiku 4.5 ne connaît pas `effort`, on ne l'envoie pas.
+ */
+export async function ask(system: string, messages: Msg[], opts: { model?: string; maxTokens?: number; effort?: Effort } = {}) {
+  const model = opts.model || MODEL();
   const res = await anthropic().messages.create({
-    model: opts.model || MODEL(),
-    max_tokens: opts.maxTokens || 1024,
+    model,
+    max_tokens: opts.maxTokens || 2048,
     system,
     messages,
+    ...(model.startsWith('claude-haiku-4') ? {} : { output_config: { effort: opts.effort || 'low' } }),
   });
   return res.content
     .filter((b) => b.type === 'text')

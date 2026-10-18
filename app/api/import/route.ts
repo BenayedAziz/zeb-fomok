@@ -36,7 +36,8 @@ export async function POST(req: Request) {
   try {
     const out = await ask(IMPORT_SYSTEM, [{ role: 'user', content: importPrompt(LABEL[source] || source, raw, body.ctx) }], {
       model: IMPORT_MODEL(),
-      maxTokens: 8000,
+      maxTokens: 16000,
+      effort: 'medium',
     });
     const parsed = parseJson(out);
     if (!parsed) return NextResponse.json({ error: 'invalid_json' }, { status: 502 });

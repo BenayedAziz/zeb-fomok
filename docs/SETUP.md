@@ -27,7 +27,7 @@ Règle d'or : **les clés ne se collent jamais dans le code ni dans un chat**. E
 
 1. Sur console.anthropic.com, crée une clé API → `ANTHROPIC_API_KEY`.
 2. **Settings > Limits** : règle la limite de dépense mensuelle à **20 €** (ou équivalent en $). C'est le vrai garde-fou : au-delà, l'IA s'arrête toute seule.
-3. Dans l'appli, chaque personne a en plus une limite par jour (`AI_DAILY_LIMIT`, 60 par défaut). Un rangement coûte environ 0,2 centime avec le modèle par défaut.
+3. Dans l'appli, chaque personne a en plus une limite par jour (`AI_DAILY_LIMIT`, 60 par défaut). Un rangement coûte environ 0,05 centime avec le modèle par défaut (Claude Haiku 5.5).
 
 ### Dictée vocale (facultatif)
 
@@ -48,7 +48,8 @@ Sans rien configurer, le bouton micro utilise la dictée du navigateur (Chrome, 
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | étape 1 |
 | `SUPABASE_SERVICE_ROLE_KEY` | étape 1 (secret) |
 | `ANTHROPIC_API_KEY` | étape 2 (secret) |
-| `AI_MODEL` | `claude-haiku-4-5` |
+| `AI_MODEL` | `claude-haiku-5-5` |
+| `HF_TOKEN` | dictée vocale, facultatif (secret) |
 | `AI_DAILY_LIMIT` | `60` |
 | `ALLOWED_EMAILS` | ton email et ceux de tes 3 amis, séparés par des virgules |
 | `NEXT_PUBLIC_SITE_URL` | `https://ton-site.vercel.app` (après le premier déploiement) |
