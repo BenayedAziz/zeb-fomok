@@ -145,10 +145,32 @@ function Sidebar() {
   );
 }
 
+/**
+ * Dictée qui capture toute seule : quand la transcription est finie, le texte part directement à l'IA.
+ * Ce qui était déjà tapé dans le champ est gardé devant le texte dicté.
+ */
+function useVoiceCapture(setV: (s: string) => void, send: (t: string) => void) {
+  const typed = useRef('');
+  return {
+    type: (s: string) => {
+      typed.current = s;
+      setV(s);
+    },
+    onText: (t: string, final: boolean) => {
+      const all = [typed.current.trim(), t.trim()].filter(Boolean).join(' ');
+      if (!final) return setV(all);
+      typed.current = '';
+      setV('');
+      if (all) send(all);
+    },
+  };
+}
+
 function TopBar() {
   const store = useStore();
   const { ui, set, capture, toast } = useUI();
   const [v, setV] = useState('');
+  const voice = useVoiceCapture(setV, (t) => capture(t));
   const titles: Partial<Record<View, string>> = { day: 'Ma journée', inbox: 'Inbox', next: 'Prochaines actions', waiting: 'En attente', someday: 'Un jour / peut-être', projects: 'Projets', project: 'Projet', pins: 'Épinglés', goals: 'Objectifs', review: 'Revue', journal: 'Journal', import: 'Importer', settings: 'Réglages', help: 'Aide' };
   return (
     <header className="top">
@@ -161,7 +183,7 @@ function TopBar() {
         onSubmit={(e) => {
           e.preventDefault();
           const t = v;
-          setV('');
+          voice.type('');
           capture(t);
         }}
       >
@@ -169,8 +191,8 @@ function TopBar() {
         <label htmlFor="captureInput" className="sr">
           Capturer une idée ou une tâche
         </label>
-        <input id="captureInput" value={v} onChange={(e) => setV(e.target.value)} placeholder="Note une ou plusieurs choses, l'IA range… (ex. « Réunion RESAH jeudi 14h, relancer François »)" autoComplete="off" enterKeyHint="send" />
-        <Mic onText={(t) => setV(t)} onError={(m) => toast({ text: m })} />
+        <input id="captureInput" value={v} onChange={(e) => voice.type(e.target.value)} placeholder="Note une ou plusieurs choses, l'IA range… (ex. « Réunion RESAH jeudi 14h, relancer François »)" autoComplete="off" enterKeyHint="send" />
+        <Mic onText={voice.onText} onError={(m) => toast({ text: m })} />
         <span className="kbd">C</span>
         <button className="btn primary sm" type="submit" disabled={!v.trim()}>
           Capturer
@@ -189,6 +211,10 @@ function CaptureSheet() {
   const [v, setV] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
   const preset = ui.capturePreset;
+  const voice = useVoiceCapture(setV, (t) => {
+    set({ captureOpen: false, capturePreset: null });
+    capture(t, preset || undefined);
+  });
   useEffect(() => {
     if (ui.captureOpen) setTimeout(() => ref.current?.focus(), 30);
   }, [ui.captureOpen]);
@@ -197,7 +223,7 @@ function CaptureSheet() {
   const submit = () => {
     const t = v;
     if (!t.trim()) return;
-    setV('');
+    voice.type('');
     close();
     capture(t, preset || undefined);
   };
@@ -228,7 +254,7 @@ function CaptureSheet() {
             className="big"
             rows={3}
             value={v}
-            onChange={(e) => setV(e.target.value)}
+            onChange={(e) => voice.type(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -238,7 +264,7 @@ function CaptureSheet() {
             placeholder={preset?.time ? 'Qu’est-ce que tu mets sur ce créneau ?' : "Une ou plusieurs choses : tâches, rendez-vous, liens… L'IA range chaque élément."}
             aria-label="Ce que tu as en tête"
           />
-          <Mic onText={(t) => setV(t)} onError={(m) => toast({ text: m })} />
+          <Mic onText={voice.onText} onError={(m) => toast({ text: m })} />
         </div>
         <div className="vh-actions" style={{ justifyContent: 'space-between' }}>
           <span className="hint">Ex. « MMA tous les mardis 19h, anniversaire de Sarah le 12 mars, finir le devis Egyptours »</span>
