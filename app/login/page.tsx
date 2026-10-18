@@ -7,9 +7,13 @@ export default function Login() {
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('error') === 'link') {
+    const error = new URLSearchParams(window.location.search).get('error');
+    if (error === 'link') {
       setState('error');
       setMsg('Ce lien de connexion a expiré ou a déjà servi. Demande-en un nouveau.');
+    } else if (error === 'down') {
+      setState('error');
+      setMsg('Le service de comptes ne répond pas pour le moment. Réessaie dans quelques minutes.');
     }
   }, []);
 
