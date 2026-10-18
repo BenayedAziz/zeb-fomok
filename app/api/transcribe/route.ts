@@ -30,13 +30,20 @@ export async function POST(req: Request) {
       headers: { Authorization: `Bearer ${process.env.HF_TOKEN}`, 'Content-Type': type.split(';')[0] },
       body: audio,
     });
-    const body = (await r.json().catch(() => null)) as { text?: string; error?: string } | null;
+    const raw = await r.text();
+    let body: { text?: string; error?: unknown } | null = null;
+    try {
+      body = JSON.parse(raw);
+    } catch {}
     if (!r.ok || !body || typeof body.text !== 'string') {
+      const detail = (typeof body?.error === 'string' ? body.error : raw).slice(0, 300);
+      console.error('transcribe: Hugging Face a refusé', r.status, type, audio.byteLength, detail); // visible dans Vercel > Logs
       // 503 = modèle en cours de chargement chez HF : le client peut réessayer.
-      return NextResponse.json({ error: r.status === 503 ? 'model_loading' : 'asr_failed', detail: body?.error?.slice(0, 200) }, { status: r.status === 503 ? 503 : 502 });
+      return NextResponse.json({ error: r.status === 503 ? 'model_loading' : 'asr_failed', hfStatus: r.status, detail }, { status: r.status === 503 ? 503 : 502 });
     }
     return NextResponse.json({ text: body.text.trim() });
-  } catch {
+  } catch (e) {
+    console.error('transcribe: Hugging Face injoignable', (e as Error).message);
     return NextResponse.json({ error: 'asr_unreachable' }, { status: 502 });
   }
 }
