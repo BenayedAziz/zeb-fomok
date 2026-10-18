@@ -18,8 +18,20 @@ export async function middleware(request: NextRequest) {
       },
     },
   });
-  const { data } = await supabase.auth.getUser();
-  if (!data.user && request.nextUrl.pathname.startsWith('/app')) {
+  // Si Supabase ne répond pas (projet en pause, panne), on n'attend pas 25 s : page de connexion avec un message.
+  const user = await Promise.race([
+    supabase.auth.getUser().then(({ data }) => data.user ?? null, () => undefined),
+    new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5000)),
+  ]);
+  const onApp = request.nextUrl.pathname.startsWith('/app');
+  if (user === undefined) {
+    if (!onApp) return response;
+    const login = request.nextUrl.clone();
+    login.pathname = '/login';
+    login.search = '?error=down';
+    return NextResponse.redirect(login);
+  }
+  if (!user && onApp) {
     const login = request.nextUrl.clone();
     login.pathname = '/login';
     login.search = '';
