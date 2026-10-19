@@ -1,18 +1,18 @@
 # Feuille de route
 
-## État au 8 octobre 2026
+## État au 19 octobre 2026
 - En ligne : https://zeb-fomok.vercel.app (Vercel, mise à jour automatique à chaque push sur `main`).
-- Supabase `enbldieuxdgzrzmydgjn` : migrations 001 à 003 appliquées, RLS vérifiée, conseiller sécurité sans alerte. URL de connexion réglée.
-- Variables Vercel posées : Supabase (URL, clé publique, clé service), `NEXT_PUBLIC_SITE_URL`, `IMPORT_SECRET`, `ALLOWED_EMAILS`, `AI_DAILY_LIMIT`.
-- IA : Claude (Anthropic), modèle par défaut `claude-haiku-5-5`. Hugging Face sert uniquement à la dictée vocale (Whisper). **Reste à poser `ANTHROPIC_API_KEY` (et `HF_TOKEN` pour la dictée) sur Vercel** : sans clé, le message « L'IA n'est pas encore branchée » s'affiche.
+- Supabase `enbldieuxdgzrzmydgjn` : migrations 001 à 003 appliquées, RLS vérifiée. Projet gratuit : il se met en pause après une semaine sans activité (réveil gratuit depuis le tableau de bord).
+- IA : Claude Haiku 5.5 (`ANTHROPIC_API_KEY` sur Vercel, test `GET /api/connect/status?check` → `ok`). Dictée : Whisper via Hugging Face (`HF_TOKEN`, crédits prépayés), dictée du navigateur en secours seulement.
+- Fait en octobre : rangement automatique de l'inbox à l'ouverture, arrêt de la dictée en fin de parole et capture directe, événements qui se cochent (grisés à rayures).
 
-## Prochaines étapes
-1. Tester son propre compte de bout en bout (connexion, accueil, captures, journée) et noter ce qui coince.
-2. IA : poser `ANTHROPIC_API_KEY` et `HF_TOKEN` sur Vercel, tester rangement, entretien, import et dictée. Si l'import manque de finesse, `AI_IMPORT_MODEL=claude-sonnet-5-5`.
+## Prochaines étapes (ordre décidé)
+1. **UX et UI** inspirées de Mobbin : choisir des écrans de référence (capture, journée, calendrier, revue) et refaire les vues.
+2. **Connexions Notion, Gmail, Outlook, agendas** : d'abord l'import ponctuel déjà codé (créer les applis OAuth et poser leurs clés), puis la synchro continue (voir plus bas).
 3. Page « Invités » dans les Réglages (liste en base au lieu de `ALLOWED_EMAILS`, sans redéploiement).
-4. UX inspirée de Mobbin : choisir des écrans de référence (capture, journée, calendrier, revue) et refaire les vues.
+4. Tâche quotidienne (Vercel Cron) qui garde Supabase actif.
 5. Trouver un nom.
-6. Connexions durables aux outils (voir plus bas).
+6. **Hermes qui t'appelle** (à garder en tête, détail dans la partie V2).
 7. **Partager vers l'appli** depuis TikTok, Instagram, YouTube… (comme Punkt) : le lien arrive en épinglé, l'IA le range.
    - Android : `share_target` dans `public/manifest.webmanifest` + route qui reçoit le lien. L'appli installée apparaît dans le menu Partager.
    - iPhone : Safari ne propose pas les applis web dans le menu Partager. Solution : un **Raccourci iOS** « Envoyer au Second Cerveau » (apparaît dans Partager) qui poste le lien sur une route `/api/share` avec un jeton personnel, généré dans les Réglages. Plus tard, une vraie appli iOS avec extension de partage.
@@ -75,6 +75,9 @@ Objectif : chaque utilisateur branche ses comptes, l'appli récolte et range dan
 - **L'IA planifie ma semaine** : elle place les prochaines actions dans les créneaux libres, je glisse pour ajuster
 - **Brief du matin par email** : agenda du jour, 3 priorités, ce qui est en retard
 - **Envoyer une tâche à Hermes** : la tâche passe en « En attente : Hermes », le résultat revient dans le projet
+- **Hermes qui appelle sur WhatsApp** (plugin communautaire `hermes-whatsapp-voice`, repéré le 18 oct. 2026) : Hermes lit ta journée dans Second Cerveau et t'appelle pour un rappel urgent ou le point du matin ; tu peux le rappeler pour ajouter une tâche à voix haute, un résumé arrive dans WhatsApp après l'appel.
+  - Côté Second Cerveau : une route `/api/agent` protégée par un jeton personnel (le même que pour le partage) : lire la journée, les retards, l'inbox ; ajouter une capture.
+  - Côté Hermes : le plugin, un numéro WhatsApp de rechange (connexion non officielle, risque de blocage), une clé Gemini (Gemini Live fait la voix, environ 0,02 $/min ; l'offre gratuite peut servir à Google pour s'entraîner), Hermes allumé en permanence sur un Mac ou un serveur Linux.
 - **Veille qui ressort au bon moment** : l'IA propose une ressource épinglée quand tu travailles sur le projet
 - Bilan trimestriel par objectif
 - Glisser une tâche d'un jour à l'autre dans la vue mois en gardant l'heure
