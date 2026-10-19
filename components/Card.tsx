@@ -117,6 +117,11 @@ export function Card({ it, o = {} }: { it: Item; o?: CardOpts }) {
               ↻{o.compact ? '' : ` ${recLabel(it)}`}
             </span>
           )}
+          {it.quick && !done && !o.ghost && (
+            <span className="chip quick" title="Se fait en moins de 2 minutes : fais-le maintenant">
+              2 min
+            </span>
+          )}
           {it.aiSorted && !done && !o.ghost && (
             <span className="chip ai" title={it.aiReason || "Rangé par l'IA"}>
               IA

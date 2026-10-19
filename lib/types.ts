@@ -30,6 +30,8 @@ export interface Item {
   notes?: string | null;
   aiSorted?: boolean;
   aiReason?: string | null;
+  /** Faisable en moins de 2 minutes (règle GTD) : à faire tout de suite. */
+  quick?: boolean;
   doneAt?: string | null;
   createdAt: string;
   updatedAt?: string;
@@ -103,12 +105,21 @@ export interface Settings {
   reviewEvery: number;
 }
 
+/** Ce qui a été supprimé : récupérable pendant 30 jours. */
+export interface TrashEntry {
+  id: string;
+  kind: 'items' | 'pins';
+  rowData: Item | Pin;
+  deletedAt: string;
+}
+
 export interface Data {
   items: Record<string, Item>;
   projects: Record<string, Project>;
   domains: Record<string, Domain>;
   goals: Record<string, Goal>;
   pins: Record<string, Pin>;
+  trash: Record<string, TrashEntry>;
   review: Review;
   settings: Settings;
 }
@@ -131,6 +142,7 @@ export interface AiItem {
   waitingFor?: string | null;
   url?: string | null;
   note?: string | null;
+  quick?: boolean | null;
   newProject?: { name?: string; domainId?: string | null; outcome?: string } | null;
   reason?: string;
 }

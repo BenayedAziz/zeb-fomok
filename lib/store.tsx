@@ -1,6 +1,6 @@
 'use client';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import type { Data, Domain, Goal, Item, Pin, Project, Review, Settings } from './types';
+import type { Data, Domain, Goal, Item, Pin, Project, Review, Settings, TrashEntry } from './types';
 import { DEFAULT_SETTINGS } from './gtd';
 import { getBrowserSupabase } from './supabase/client';
 
@@ -8,7 +8,8 @@ type Coll = 'items' | 'projects' | 'domains' | 'goals' | 'pins';
 const TABLE: Record<Coll, string> = { items: 'items', projects: 'projects', domains: 'domains', goals: 'goals', pins: 'pins' };
 const LS_KEY = 'second-cerveau-demo-v1';
 
-const empty = (): Data => ({ items: {}, projects: {}, domains: {}, goals: {}, pins: {}, review: { last: null, checks: {} }, settings: { ...DEFAULT_SETTINGS } });
+const TRASH_DAYS = 30;
+const empty = (): Data => ({ items: {}, projects: {}, domains: {}, goals: {}, pins: {}, trash: {}, review: { last: null, checks: {} }, settings: { ...DEFAULT_SETTINGS } });
 
 /* camelCase <-> snake_case pour les colonnes Postgres */
 const toSnake = (k: string) => k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
@@ -50,7 +51,8 @@ export interface Store {
   get: () => Data;
   addItem: (p: Partial<Item>) => Item;
   updateItem: (id: string, p: Partial<Item>) => void;
-  removeItem: (id: string) => Item | null;
+  /** Envoie à la corbeille (sauf `forget`, pour un élément tout juste créé qu'on annule). */
+  removeItem: (id: string, opts?: { forget?: boolean }) => Item | null;
   addProject: (p: Partial<Project>) => Project;
   updateProject: (id: string, p: Partial<Project>) => void;
   removeProject: (id: string) => void;
@@ -62,7 +64,11 @@ export interface Store {
   removeGoal: (id: string) => void;
   addPin: (p: Partial<Pin>) => Pin;
   updatePin: (id: string, p: Partial<Pin>) => void;
-  removePin: (id: string) => Pin | null;
+  removePin: (id: string, opts?: { forget?: boolean }) => Pin | null;
+  /** Remet un élément de la corbeille à sa place. */
+  restoreTrash: (trashId: string) => void;
+  /** Supprime définitivement (un élément, ou toute la corbeille sans argument). */
+  purgeTrash: (trashId?: string) => void;
   restore: (coll: Coll, row: Item | Project | Domain | Goal | Pin) => void;
   setReview: (r: Review) => void;
   setSettings: (p: Partial<Settings>) => void;
@@ -98,7 +104,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           const raw = localStorage.getItem(LS_KEY);
           if (raw) {
             const saved = JSON.parse(raw);
-            setData({ ...empty(), ...saved, settings: { ...DEFAULT_SETTINGS, ...(saved.settings || {}) } });
+            setData({ ...empty(), ...saved, trash: saved.trash || {}, settings: { ...DEFAULT_SETTINGS, ...(saved.settings || {}) } });
           }
         } catch {
           /* stockage indisponible : on part de zéro */
@@ -117,6 +123,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         supabase.from('pins').select('*'),
         supabase.from('settings').select('*').maybeSingle(),
       ]);
+      // La corbeille peut ne pas exister encore (migration 004 pas appliquée) : on fait sans.
+      const tr = await supabase.from('trash').select('*').order('deleted_at', { ascending: false });
       if (cancelled) return;
       const firstErr = it.error || pr.error || dm.error || gl.error;
       if (firstErr) setError(firstErr.message);
@@ -131,6 +139,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         domains: map<Domain>(dm.data),
         goals: map<Goal>(gl.data),
         pins: map<Pin>(pn.data),
+        trash: tr.error ? {} : map<TrashEntry>(tr.data),
         settings: { ...DEFAULT_SETTINGS, ...((st.data?.data as Partial<Settings>) || {}) },
         review: rv.data ? { last: rv.data.last, checks: rv.data.checks || {} } : { last: null, checks: {} },
       });
@@ -193,6 +202,47 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [remote, supabase],
   );
 
+  /* ---------- corbeille ---------- */
+  const setTrash = (trash: Data['trash']) => {
+    dataRef.current = { ...dataRef.current, trash };
+    setData((d) => ({ ...d, trash }));
+  };
+  const toTrash = useCallback(
+    (kind: TrashEntry['kind'], row: Item | Pin) => {
+      const entry: TrashEntry = { id: uuid(), kind, rowData: row, deletedAt: nowIso() };
+      const next = { ...dataRef.current[kind] } as Record<string, unknown>;
+      delete next[row.id];
+      dataRef.current = { ...dataRef.current, [kind]: next, trash: { ...dataRef.current.trash, [entry.id]: entry } };
+      setData(dataRef.current);
+      // On copie dans la corbeille avant d'effacer ; si la copie échoue, on n'efface pas.
+      remote(async () => {
+        const t = await supabase!.from('trash').insert({ id: entry.id, kind, row_data: row, deleted_at: entry.deletedAt });
+        if (t.error) return t;
+        return supabase!.from(TABLE[kind]).delete().eq('id', row.id);
+      });
+    },
+    [remote, supabase],
+  );
+  const dropTrash = useCallback(
+    (ids: string[]) => {
+      if (!ids.length) return;
+      const trash = { ...dataRef.current.trash };
+      ids.forEach((i) => delete trash[i]);
+      setTrash(trash);
+      remote(() => supabase!.from('trash').delete().in('id', ids));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [remote, supabase],
+  );
+
+  /* Au-delà de 30 jours, la corbeille se vide toute seule. */
+  useEffect(() => {
+    if (!ready) return;
+    const limit = Date.now() - TRASH_DAYS * 864e5;
+    const old = Object.values(dataRef.current.trash).filter((t) => Date.parse(t.deletedAt) < limit).map((t) => t.id);
+    dropTrash(old);
+  }, [ready, dropTrash]);
+
   const store = useMemo<Store>(() => {
     const patchRow = <T extends { id: string }>(coll: Coll, id: string, p: Partial<T>) => {
       const cur = (dataRef.current[coll] as unknown as Record<string, T>)[id];
@@ -216,9 +266,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       get: () => dataRef.current,
       addItem: (p) => insertRow<Item>('items', { status: 'inbox', title: '', ...p, id: p.id || uuid(), createdAt: nowIso() } as Item),
       updateItem: (id, p) => patchRow<Item>('items', id, p),
-      removeItem: (id) => {
+      removeItem: (id, opts) => {
         const prev = dataRef.current.items[id] || null;
-        del('items', id);
+        if (prev && !opts?.forget) toTrash('items', prev);
+        else del('items', id);
         return prev;
       },
       addProject: (p) => insertRow<Project>('projects', { status: 'active', links: [], name: '', ...p, id: p.id || uuid(), createdAt: nowIso() } as Project),
@@ -243,12 +294,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       removeGoal: (id) => del('goals', id),
       addPin: (p) => insertRow<Pin>('pins', { title: p.title || p.url || '', url: '', ...p, id: p.id || uuid(), createdAt: nowIso() } as Pin),
       updatePin: (id, p) => patchRow<Pin>('pins', id, p),
-      removePin: (id) => {
+      removePin: (id, opts) => {
         const prev = dataRef.current.pins[id] || null;
-        del('pins', id);
+        if (prev && !opts?.forget) toTrash('pins', prev);
+        else del('pins', id);
         return prev;
       },
-      restore: (coll, row) => put(coll, row as { id: string }, true),
+      restoreTrash: (trashId) => {
+        const t = dataRef.current.trash[trashId];
+        if (!t) return;
+        dropTrash([trashId]);
+        // Le projet d'origine a pu être supprimé entre-temps : l'élément revient alors sans projet.
+        const row = { ...t.rowData } as Item & Pin;
+        if (row.projectId && !dataRef.current.projects[row.projectId]) row.projectId = null;
+        put(t.kind, row, true);
+      },
+      purgeTrash: (trashId) => dropTrash(trashId ? [trashId] : Object.keys(dataRef.current.trash)),
+      restore: (coll, row) => {
+        // « Annuler » juste après une suppression : on retire aussi la copie mise à la corbeille.
+        const copies = Object.values(dataRef.current.trash).filter((t) => t.rowData.id === row.id).map((t) => t.id);
+        if (copies.length) dropTrash(copies);
+        put(coll, row as { id: string }, true);
+      },
       setSettings: (p) => {
         const next = { ...dataRef.current.settings, ...p };
         dataRef.current = { ...dataRef.current, settings: next };
@@ -302,7 +369,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         errFn.current = fn;
       },
     };
-  }, [data, ready, mode, email, error, put, del, remote, supabase]);
+  }, [data, ready, mode, email, error, put, del, remote, supabase, toTrash, dropTrash]);
 
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
 }

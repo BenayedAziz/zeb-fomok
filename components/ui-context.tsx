@@ -7,7 +7,7 @@ import { isDate, isTime, nextOccurrence, relDate, todayIso } from '@/lib/dates';
 
 export type View =
   | 'day' | 'inbox' | 'next' | 'waiting' | 'someday' | 'projects' | 'project' | 'pins'
-  | 'goals' | 'review' | 'journal' | 'import' | 'settings' | 'help' | 'onboarding';
+  | 'goals' | 'review' | 'journal' | 'import' | 'settings' | 'help' | 'onboarding' | 'trash';
 export type CalMode = 'day' | 'week' | 'month';
 export type DrawerState =
   | { type: 'item'; id: string }
@@ -113,6 +113,12 @@ function itemFromAi(d: Data, r: AiItem): Partial<Item> {
     if (iv > 1 && iv < 100) p.recurrenceInterval = Math.round(iv);
     if (p.status === 'inbox') p.status = 'todo';
   }
+  // Règle des 2 minutes : à faire tout de suite, donc aujourd'hui s'il n'y a pas d'autre date.
+  if (p.kind === 'task' && r.quick === true && p.status !== 'waiting' && p.status !== 'someday') {
+    p.quick = true;
+    if (p.status === 'inbox') p.status = 'todo';
+    if (!p.date) p.date = todayIso();
+  }
   if (p.status === 'waiting') {
     if (typeof r.waitingFor === 'string') p.waitingFor = r.waitingFor.slice(0, 120);
     p.waitingSince = todayIso();
@@ -140,6 +146,8 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
   const store = useStore();
   const storeRef = useRef(store);
   storeRef.current = store;
+  /* Pour les boutons des notifications créées avant que ces actions soient définies. */
+  const toggleDoneRef = useRef<(id: string) => void>(() => {});
   const [ui, setUi] = useState<UI>(() => ({
     view: 'day',
     cal: 'day',
@@ -257,18 +265,20 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
         chips.push([it?.kind === 'event' ? 'Événement' : ST[it?.status || 'todo'], proj, when, it?.recurrence ? recLabel(it) : ''].filter(Boolean).join(' · '));
       });
       // Si l'IA n'a renvoyé que des épingles, l'élément de départ n'a plus de raison d'être.
-      if (!placeholderUsed) s.removeItem(placeholderId);
+      if (!placeholderUsed) s.removeItem(placeholderId, { forget: true });
 
       const n = results.length;
+      const quickId = [placeholderId, ...created.filter((c) => c.coll === 'items').map((c) => c.id)].find((x) => s.get().items[x]?.quick);
       toast({
-        text: n > 1 ? `${n} éléments rangés` : 'Rangé',
+        text: quickId ? `${n > 1 ? `${n} éléments rangés. ` : ''}Moins de 2 min : fais-le maintenant.` : n > 1 ? `${n} éléments rangés` : 'Rangé',
         chips: chips.slice(0, 5),
         actions: [
-          ...(placeholderUsed ? [{ label: 'Voir', run: () => setUi((u) => ({ ...u, drawer: { type: 'item', id: placeholderId } })) }] : []),
+          ...(quickId ? [{ label: "C'est fait", run: () => toggleDoneRef.current(quickId) }] : []),
+          ...(placeholderUsed && !quickId ? [{ label: 'Voir', run: () => setUi((u) => ({ ...u, drawer: { type: 'item', id: placeholderId } })) }] : []),
           {
             label: 'Annuler',
             run: () => {
-              created.forEach((c) => (c.coll === 'items' ? s.removeItem(c.id) : c.coll === 'pins' ? s.removePin(c.id) : s.removeProject(c.id)));
+              created.forEach((c) => (c.coll === 'items' ? s.removeItem(c.id, { forget: true }) : c.coll === 'pins' ? s.removePin(c.id, { forget: true }) : s.removeProject(c.id)));
               if (placeholderUsed) {
                 const raw0 = s.get().items[placeholderId]?.raw;
                 s.updateItem(placeholderId, { status: 'inbox', kind: 'task', title: raw0 || s.get().items[placeholderId]?.title, projectId: null, date: null, time: null, duration: null, recurrence: null, recurrenceDays: null, recurrenceInterval: null, aiSorted: false });
@@ -365,7 +375,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     (id: string) => {
       const prev = storeRef.current.removeItem(id);
       setUi((u) => ({ ...u, drawer: null }));
-      if (prev) toast({ text: 'Élément supprimé', actions: [{ label: 'Annuler', run: () => storeRef.current.restore('items', prev) }] });
+      if (prev) toast({ text: 'Mis à la corbeille', actions: [{ label: 'Annuler', run: () => storeRef.current.restore('items', prev) }] });
     },
     [toast],
   );
@@ -411,7 +421,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
             label: 'Annuler',
             run: () => {
               s.updateItem(id, { status: prev.status, doneAt: null });
-              if (nextId) s.removeItem(nextId);
+              if (nextId) s.removeItem(nextId, { forget: true });
             },
           },
         ],
@@ -419,6 +429,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     },
     [toast],
   );
+  toggleDoneRef.current = toggleDone;
 
   const schedule = useCallback(
     (id: string, date: string | null, time?: string | null) => {

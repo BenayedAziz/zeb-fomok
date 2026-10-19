@@ -513,7 +513,7 @@ function PinDrawer({ id }: { id: string }) {
           onClick={() => {
             const row = store.removePin(id);
             closeDrawer();
-            toast({ text: 'Ressource retirée', actions: row ? [{ label: 'Annuler', run: () => store.restore('pins', row) }] : undefined });
+            toast({ text: 'Mise à la corbeille', actions: row ? [{ label: 'Annuler', run: () => store.restore('pins', row) }] : undefined });
           }}
         >
           Retirer

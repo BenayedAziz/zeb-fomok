@@ -124,7 +124,8 @@ Le texte peut contenir PLUSIEURS éléments distincts (séparés par des virgule
 Pour chaque élément :
 - kind : "event" pour ce qui a lieu à un moment donné (réunion, rendez-vous, anniversaire, cours, séance, appel planifié) ; "task" pour une action à faire ; "pin" pour un article, un outil, une vidéo ou un lien à garder comme ressource (souvent une URL).
 - status (task) : "todo" si c'est une action concrète ; "waiting" si on attend quelque chose de quelqu'un ; "someday" pour une idée ou une envie sans engagement ; "inbox" seulement si c'est impossible à interpréter. Pour un event : "todo".
-- title : court. Pour une task, commence par un verbe d'action. Pour un event, le nom de l'événement (« Réunion RESAH », « Anniversaire de Sarah »). Pour un pin, le titre de la ressource. Garde la langue d'origine, n'invente rien.
+- title : court. Pour une task, c'est TOUJOURS la prochaine action physique et concrète, à l'infinitif, qu'on peut faire sans réfléchir davantage. Transforme les envies et les intentions (« je veux… », « faudrait que… », « penser à… », « idée : … ») en action : « je veux me remettre au sport » devient « Chercher une salle de sport près de chez moi » (et un newProject « Reprendre le sport ») ; « faudrait que j'appelle le garage » devient « Appeler le garage pour prendre rendez-vous ». Pour un event, le nom de l'événement (« Réunion RESAH », « Anniversaire de Sarah »). Pour un pin, le titre de la ressource. Garde la langue d'origine, n'invente pas de faits.
+- quick : true si la task elle-même se fait en moins de 2 minutes (envoyer un SMS, répondre oui, transférer un mail, noter un numéro), sinon false. Toujours false pour un event ou un pin.
 - projectId : l'id d'un projet existant seulement si le lien est clair, sinon null.
 - domainId : l'id du domaine le plus probable, sinon null.
 - context : un des contextes possibles ou null (task seulement).
@@ -142,7 +143,7 @@ Pour chaque élément :
 - reason : une phrase courte qui explique le rangement.
 
 Réponds avec {"items": [ ... ]}. Exemple pour « Réunion RESAH jeudi 14h pendant 1h, et relancer François pour le devis Egyptours » :
-{"items":[{"kind":"event","status":"todo","title":"Réunion RESAH","projectId":null,"domainId":null,"context":null,"priority":null,"date":"2026-10-08","time":"14:00","duration":60,"recurrence":null,"recurrenceDays":null,"recurrenceInterval":null,"waitingFor":null,"url":null,"note":null,"newProject":null,"reason":"Réunion à une date et une heure précises."},{"kind":"task","status":"todo","title":"Relancer François pour le devis","projectId":null,"domainId":null,"context":"@telephone","priority":"med","date":null,"time":null,"duration":null,"recurrence":null,"recurrenceDays":null,"recurrenceInterval":null,"waitingFor":null,"url":null,"note":null,"newProject":null,"reason":"Action unique liée au client Egyptours."}]}`;
+{"items":[{"kind":"event","status":"todo","title":"Réunion RESAH","projectId":null,"domainId":null,"context":null,"priority":null,"date":"2026-10-08","time":"14:00","duration":60,"recurrence":null,"recurrenceDays":null,"recurrenceInterval":null,"waitingFor":null,"url":null,"note":null,"quick":false,"newProject":null,"reason":"Réunion à une date et une heure précises."},{"kind":"task","status":"todo","title":"Relancer François pour le devis","projectId":null,"domainId":null,"context":"@telephone","priority":"med","date":null,"time":null,"duration":null,"recurrence":null,"recurrenceDays":null,"recurrenceInterval":null,"waitingFor":null,"url":null,"note":null,"quick":true,"newProject":null,"reason":"Un appel rapide : moins de 2 minutes."}]}`;
 }
 
 /* ------------------------------------------------------------------ */

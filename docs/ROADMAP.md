@@ -4,10 +4,12 @@
 - En ligne : https://zeb-fomok.vercel.app (Vercel, mise à jour automatique à chaque push sur `main`).
 - Supabase `enbldieuxdgzrzmydgjn` : migrations 001 à 003 appliquées, RLS vérifiée. Projet gratuit : il se met en pause après une semaine sans activité (réveil gratuit depuis le tableau de bord).
 - IA : Claude Haiku 5.5 (`ANTHROPIC_API_KEY` sur Vercel, test `GET /api/connect/status?check` → `ok`). Dictée : Whisper via Hugging Face (`HF_TOKEN`, crédits prépayés), dictée du navigateur en secours seulement.
-- Fait en octobre : rangement automatique de l'inbox à l'ouverture, arrêt de la dictée en fin de parole et capture directe, événements qui se cochent (grisés à rayures).
+- Fait en octobre : corbeille (30 jours), règle des 2 minutes et tâches formulées en action concrète par l'IA, rangement automatique de l'inbox à l'ouverture, arrêt de la dictée en fin de parole et capture directe, événements qui se cochent (grisés à rayures).
 
 ## Prochaines étapes (ordre décidé)
 1. **UX et UI** inspirées de Mobbin : choisir des écrans de référence (capture, journée, calendrier, revue) et refaire les vues.
+   - S'inspirer aussi de **Miro** : sensation de tableau libre, cartes qu'on déplace à la main, zoom, regroupements visuels.
+   - Mode « Clarifier l'inbox » : un élément à la fois, questions GTD en gros boutons, suggestion de l'IA présélectionnée.
 2. **Connexions Notion, Gmail, Outlook, agendas** : d'abord l'import ponctuel déjà codé (créer les applis OAuth et poser leurs clés), puis la synchro continue (voir plus bas).
 3. Page « Invités » dans les Réglages (liste en base au lieu de `ALLOWED_EMAILS`, sans redéploiement).
 4. Tâche quotidienne (Vercel Cron) qui garde Supabase actif.

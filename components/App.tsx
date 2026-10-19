@@ -13,6 +13,7 @@ import { GoalsView, ReviewView } from './views/Reflect';
 import { PinsView } from './views/Pins';
 import { SettingsView } from './views/Settings';
 import { HelpView } from './views/Help';
+import { TrashView } from './views/Trash';
 import { Mic } from './Mic';
 import { colorOfProject, counts, domainsSorted, lastReviewDays, list, projectStats, projectsSorted, reviewDue } from '@/lib/gtd';
 import { addDays, longDate, nextMonday, timeOf, todayIso } from '@/lib/dates';
@@ -125,6 +126,7 @@ function Sidebar() {
         </div>
         <div className="side-foot">
           <NavBtn view="import" label="Importer depuis mes outils" icon="import" />
+          <NavBtn view="trash" label="Corbeille" icon="trash" />
           <NavBtn view="settings" label="Réglages" icon="gear" />
           <NavBtn view="help" label="Comment ça marche" icon="help" />
           <button className="nav" onClick={() => go('onboarding')}>
@@ -171,7 +173,7 @@ function TopBar() {
   const { ui, set, capture, toast } = useUI();
   const [v, setV] = useState('');
   const voice = useVoiceCapture(setV, (t) => capture(t));
-  const titles: Partial<Record<View, string>> = { day: 'Ma journée', inbox: 'Inbox', next: 'Prochaines actions', waiting: 'En attente', someday: 'Un jour / peut-être', projects: 'Projets', project: 'Projet', pins: 'Épinglés', goals: 'Objectifs', review: 'Revue', journal: 'Journal', import: 'Importer', settings: 'Réglages', help: 'Aide' };
+  const titles: Partial<Record<View, string>> = { day: 'Ma journée', inbox: 'Inbox', next: 'Prochaines actions', waiting: 'En attente', someday: 'Un jour / peut-être', projects: 'Projets', project: 'Projet', pins: 'Épinglés', goals: 'Objectifs', review: 'Revue', journal: 'Journal', import: 'Importer', settings: 'Réglages', help: 'Aide', trash: 'Corbeille' };
   return (
     <header className="top">
       <button className="icon-btn menu-btn" onClick={() => set({ navOpen: true })} aria-label="Ouvrir le menu">
@@ -407,6 +409,8 @@ function Main() {
       return <SettingsView />;
     case 'help':
       return <HelpView />;
+    case 'trash':
+      return <TrashView />;
     default:
       return <CalendarView />;
   }
@@ -449,7 +453,7 @@ function Shell() {
     }
     try {
       const v = localStorage.getItem('sc-view') as View | null;
-      if (v && ['day', 'inbox', 'next', 'waiting', 'someday', 'projects', 'pins', 'goals', 'review', 'journal', 'settings', 'help'].includes(v)) set({ view: v });
+      if (v && ['day', 'inbox', 'next', 'waiting', 'someday', 'projects', 'pins', 'goals', 'review', 'journal', 'settings', 'help', 'trash'].includes(v)) set({ view: v });
     } catch {
       /* ignore */
     }

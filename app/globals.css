@@ -610,3 +610,12 @@ h3 { margin: 0; font-size: 14px; font-weight: 600; }
 @media (prefers-reduced-motion: reduce) {
   .pop .ck, .pop .ck svg, .pop.event.done, .pop .card-title, .pop b { animation: none; }
 }
+
+/* ---------- corbeille ---------- */
+.trash-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.trash-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--line); }
+.trash-row:first-child { border-top: 0; }
+.trash-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.trash-main b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 560px) { .trash-row { flex-wrap: wrap; } .trash-main { flex-basis: 100%; } }
+.chip.quick { background: var(--ok-soft); color: var(--ok); border-color: transparent; font-weight: 600; }
