@@ -39,6 +39,8 @@ interface UI {
   capturePreset: Partial<Item> | null;
   plan: { id: string; x: number; y: number } | null;
   pending: Record<string, boolean>;
+  /** Cochés à l'instant : déclenche l'animation, puis s'efface. */
+  justDone: Record<string, boolean>;
   aiOff: boolean;
   importSource: string | null;
 }
@@ -152,6 +154,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     capturePreset: null,
     plan: null,
     pending: {},
+    justDone: {},
     aiOff: false,
     importSource: null,
   }));
@@ -378,6 +381,15 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       }
       const prev = { ...it };
       s.updateItem(id, { status: 'done', doneAt: todayIso() });
+      setUi((u) => ({ ...u, justDone: { ...u.justDone, [id]: true } }));
+      setTimeout(() => setUi((u) => {
+        const justDone = { ...u.justDone };
+        delete justDone[id];
+        return { ...u, justDone };
+      }), 1200);
+      try {
+        navigator.vibrate?.(12); // petit retour sur téléphone
+      } catch {}
       let nextId: string | null = null;
       let extra = '';
       if (it.recurrence) {
@@ -393,7 +405,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
         extra = ` · prochaine : ${relDate(nd)}`;
       }
       toast({
-        text: `Fait${extra}`,
+        text: `${it.kind === 'event' ? 'Terminé' : 'Fait'}${extra}`,
         actions: [
           {
             label: 'Annuler',
