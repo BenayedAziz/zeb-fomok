@@ -7,7 +7,7 @@ import { isDate, isTime, nextOccurrence, relDate, todayIso } from '@/lib/dates';
 
 export type View =
   | 'day' | 'inbox' | 'next' | 'waiting' | 'someday' | 'projects' | 'project' | 'pins'
-  | 'goals' | 'review' | 'journal' | 'import' | 'settings' | 'help' | 'onboarding';
+  | 'goals' | 'review' | 'journal' | 'import' | 'settings' | 'help' | 'onboarding' | 'trash';
 export type CalMode = 'day' | 'week' | 'month';
 export type DrawerState =
   | { type: 'item'; id: string }
@@ -56,6 +56,8 @@ interface UIApi {
   dismissToast: () => void;
   capture: (text: string, extra?: Partial<Item>) => Promise<void>;
   aiSort: (id: string) => Promise<void>;
+  /** Ajout direct dans l'agenda : l'IA choisit seulement le projet et le domaine, sans toucher au reste. */
+  fileWithAi: (id: string) => Promise<void>;
   toggleDone: (id: string) => void;
   schedule: (id: string, date: string | null, time?: string | null) => void;
   removeItem: (id: string) => void;
@@ -113,6 +115,12 @@ function itemFromAi(d: Data, r: AiItem): Partial<Item> {
     if (iv > 1 && iv < 100) p.recurrenceInterval = Math.round(iv);
     if (p.status === 'inbox') p.status = 'todo';
   }
+  // Règle des 2 minutes : à faire tout de suite, donc aujourd'hui s'il n'y a pas d'autre date.
+  if (p.kind === 'task' && r.quick === true && p.status !== 'waiting' && p.status !== 'someday') {
+    p.quick = true;
+    if (p.status === 'inbox') p.status = 'todo';
+    if (!p.date) p.date = todayIso();
+  }
   if (p.status === 'waiting') {
     if (typeof r.waitingFor === 'string') p.waitingFor = r.waitingFor.slice(0, 120);
     p.waitingSince = todayIso();
@@ -140,6 +148,8 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
   const store = useStore();
   const storeRef = useRef(store);
   storeRef.current = store;
+  /* Pour les boutons des notifications créées avant que ces actions soient définies. */
+  const toggleDoneRef = useRef<(id: string) => void>(() => {});
   const [ui, setUi] = useState<UI>(() => ({
     view: 'day',
     cal: 'day',
@@ -219,6 +229,9 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
         const p = itemFromAi(s.get(), r);
         if (r.newProject && typeof r.newProject.name === 'string' && r.newProject.name.trim() && !p.projectId) {
           const key = r.newProject.name.trim().toLowerCase();
+          // Un projet du même nom existe déjà : on s'y rattache au lieu d'en créer un doublon.
+          const same = Object.values(s.get().projects).find((x) => x.status !== 'done' && x.name.trim().toLowerCase() === key);
+          if (same) newProjects[key] = same.id;
           if (!newProjects[key]) {
             const dom = r.newProject.domainId && d.domains[r.newProject.domainId] ? r.newProject.domainId : p.domainId || null;
             const np = s.addProject({
@@ -233,6 +246,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
             chips.push(`Nouveau projet : ${np.name}`);
           }
           p.projectId = newProjects[key];
+          if (!p.domainId) p.domainId = s.get().projects[p.projectId]?.domainId || null;
           if (p.status === 'inbox') p.status = 'todo';
         }
         let id: string;
@@ -257,18 +271,20 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
         chips.push([it?.kind === 'event' ? 'Événement' : ST[it?.status || 'todo'], proj, when, it?.recurrence ? recLabel(it) : ''].filter(Boolean).join(' · '));
       });
       // Si l'IA n'a renvoyé que des épingles, l'élément de départ n'a plus de raison d'être.
-      if (!placeholderUsed) s.removeItem(placeholderId);
+      if (!placeholderUsed) s.removeItem(placeholderId, { forget: true });
 
       const n = results.length;
+      const quickId = [placeholderId, ...created.filter((c) => c.coll === 'items').map((c) => c.id)].find((x) => s.get().items[x]?.quick);
       toast({
-        text: n > 1 ? `${n} éléments rangés` : 'Rangé',
+        text: quickId ? `${n > 1 ? `${n} éléments rangés. ` : ''}Moins de 2 min : fais-le maintenant.` : n > 1 ? `${n} éléments rangés` : 'Rangé',
         chips: chips.slice(0, 5),
         actions: [
-          ...(placeholderUsed ? [{ label: 'Voir', run: () => setUi((u) => ({ ...u, drawer: { type: 'item', id: placeholderId } })) }] : []),
+          ...(quickId ? [{ label: "C'est fait", run: () => toggleDoneRef.current(quickId) }] : []),
+          ...(placeholderUsed && !quickId ? [{ label: 'Voir', run: () => setUi((u) => ({ ...u, drawer: { type: 'item', id: placeholderId } })) }] : []),
           {
             label: 'Annuler',
             run: () => {
-              created.forEach((c) => (c.coll === 'items' ? s.removeItem(c.id) : c.coll === 'pins' ? s.removePin(c.id) : s.removeProject(c.id)));
+              created.forEach((c) => (c.coll === 'items' ? s.removeItem(c.id, { forget: true }) : c.coll === 'pins' ? s.removePin(c.id, { forget: true }) : s.removeProject(c.id)));
               if (placeholderUsed) {
                 const raw0 = s.get().items[placeholderId]?.raw;
                 s.updateItem(placeholderId, { status: 'inbox', kind: 'task', title: raw0 || s.get().items[placeholderId]?.title, projectId: null, date: null, time: null, duration: null, recurrence: null, recurrenceDays: null, recurrenceInterval: null, aiSorted: false });
@@ -321,6 +337,50 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     [applyAI, toast],
   );
 
+  const fileWithAi = useCallback(
+    async (id: string) => {
+      const s = storeRef.current;
+      const it = s.get().items[id];
+      if (!it) return;
+      try {
+        const res = await fetch('/api/classify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: it.title, ctx: aiContext(s.get()) }),
+        });
+        if (!res.ok) return; // l'élément est déjà créé : pas de projet, ce n'est pas grave
+        const body = await res.json().catch(() => ({}));
+        const result = body.result || {};
+        const r: AiItem | undefined = (Array.isArray(result.items) ? result.items : [result])[0];
+        const cur = s.get().items[id];
+        if (!r || !cur || cur.projectId) return;
+        const p = itemFromAi(s.get(), r);
+        let projectId = p.projectId || null;
+        let created = '';
+        const np = r.newProject;
+        if (!projectId && np && typeof np.name === 'string' && np.name.trim()) {
+          const key = np.name.trim().toLowerCase();
+          const same = Object.values(s.get().projects).find((x) => x.status !== 'done' && x.name.trim().toLowerCase() === key);
+          if (same) projectId = same.id;
+          else {
+            const dom = np.domainId && s.get().domains[np.domainId] ? np.domainId : p.domainId || null;
+            const pr = s.addProject({ name: np.name.trim().slice(0, 120), outcome: np.outcome?.slice(0, 300) || null, domainId: dom, color: freeColor(s.get()), aiSorted: true });
+            projectId = pr.id;
+            created = pr.name;
+          }
+        }
+        const domainId = p.domainId || (projectId ? s.get().projects[projectId]?.domainId : null) || cur.domainId || null;
+        if (!projectId && !domainId) return;
+        s.updateItem(id, { projectId, domainId });
+        const name = projectId ? s.get().projects[projectId]?.name : null;
+        if (name) toast({ text: created ? `Nouveau projet : ${name}` : `Rangé dans ${name}` });
+      } catch {
+        /* hors ligne : l'élément reste tel quel */
+      }
+    },
+    [toast],
+  );
+
   /**
    * À l'ouverture : ce qui attend dans l'inbox sans être passé par l'IA (capturé avant que l'IA soit branchée,
    * ou quand elle a échoué) est rangé automatiquement, une seule tentative par élément.
@@ -365,7 +425,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     (id: string) => {
       const prev = storeRef.current.removeItem(id);
       setUi((u) => ({ ...u, drawer: null }));
-      if (prev) toast({ text: 'Élément supprimé', actions: [{ label: 'Annuler', run: () => storeRef.current.restore('items', prev) }] });
+      if (prev) toast({ text: 'Mis à la corbeille', actions: [{ label: 'Annuler', run: () => storeRef.current.restore('items', prev) }] });
     },
     [toast],
   );
@@ -411,7 +471,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
             label: 'Annuler',
             run: () => {
               s.updateItem(id, { status: prev.status, doneAt: null });
-              if (nextId) s.removeItem(nextId);
+              if (nextId) s.removeItem(nextId, { forget: true });
             },
           },
         ],
@@ -419,6 +479,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     },
     [toast],
   );
+  toggleDoneRef.current = toggleDone;
 
   const schedule = useCallback(
     (id: string, date: string | null, time?: string | null) => {
@@ -447,11 +508,12 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       dismissToast,
       capture,
       aiSort,
+      fileWithAi,
       toggleDone,
       schedule,
       removeItem,
     }),
-    [ui, set, go, toast, toastState, dismissToast, capture, aiSort, toggleDone, schedule, removeItem],
+    [ui, set, go, toast, toastState, dismissToast, capture, aiSort, fileWithAi, toggleDone, schedule, removeItem],
   );
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
 }

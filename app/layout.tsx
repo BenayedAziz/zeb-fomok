@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from 'next';
-import { GeistSans } from 'geist/font/sans';
-import { GeistMono } from 'geist/font/mono';
-import '@fontsource/instrument-serif/latin-400.css';
-import '@fontsource/instrument-serif/latin-400-italic.css';
+import '@fontsource/lexend/latin-300.css';
+import '@fontsource/lexend/latin-400.css';
+import '@fontsource/lexend/latin-500.css';
+import '@fontsource/lexend/latin-600.css';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -18,14 +18,14 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: 'cover',
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#fbfbfa' },
-    { media: '(prefers-color-scheme: dark)', color: '#121315' },
+    { media: '(prefers-color-scheme: light)', color: '#F4FAFF' },
+    { media: '(prefers-color-scheme: dark)', color: '#0D1626' },
   ],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+    <html lang="fr">
       <body>{children}</body>
     </html>
   );

@@ -30,6 +30,8 @@ export interface Item {
   notes?: string | null;
   aiSorted?: boolean;
   aiReason?: string | null;
+  /** Faisable en moins de 2 minutes (règle GTD) : à faire tout de suite. */
+  quick?: boolean;
   doneAt?: string | null;
   createdAt: string;
   updatedAt?: string;
@@ -101,6 +103,16 @@ export interface Settings {
   defaultCal: 'day' | 'week' | 'month';
   /** Fréquence de la revue, en jours (1, 3, 7, 14, 30). */
   reviewEvery: number;
+  /** Personnages nuages sur les cartes (à couper pour un usage plus pro). */
+  showMascots: boolean;
+}
+
+/** Ce qui a été supprimé : récupérable pendant 30 jours. */
+export interface TrashEntry {
+  id: string;
+  kind: 'items' | 'pins';
+  rowData: Item | Pin;
+  deletedAt: string;
 }
 
 export interface Data {
@@ -109,6 +121,7 @@ export interface Data {
   domains: Record<string, Domain>;
   goals: Record<string, Goal>;
   pins: Record<string, Pin>;
+  trash: Record<string, TrashEntry>;
   review: Review;
   settings: Settings;
 }
@@ -131,6 +144,7 @@ export interface AiItem {
   waitingFor?: string | null;
   url?: string | null;
   note?: string | null;
+  quick?: boolean | null;
   newProject?: { name?: string; domainId?: string | null; outcome?: string } | null;
   reason?: string;
 }

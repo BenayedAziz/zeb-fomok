@@ -5,6 +5,7 @@ import type { Item } from '@/lib/types';
 import { useUI, type CalMode } from '../ui-context';
 import { Card, GroupedByProject } from '../Card';
 import { Icon } from '../icons';
+import { mascotFor } from '@/lib/mascots';
 import {
   backlog, colorOfItem, colorOfProject, contextsOf, counts, goalsSorted, isEvent, list, overdue, projectsSorted, reviewDue, lastReviewDays, entriesOn, type Entry,
 } from '@/lib/gtd';
@@ -300,7 +301,7 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
 
   return (
     <div
-      className={`tblock${ev ? ' event' : ''}${ghost ? ' ghost' : ''}${it.status === 'done' ? ' done' : ''}${drag ? ' dragging' : ''}${ui.justDone[it.id] ? ' pop' : ''}`}
+      className={`tblock${ev ? ' event' : ''}${ghost ? ' ghost' : ''}${it.status === 'done' ? ' done' : ''}${drag ? ' dragging' : ''}${ui.justDone[it.id] ? ' just-done' : ''}`}
       style={{ top, height, left: `calc(${(p.lane / p.lanes) * 100}% + 2px)`, width: `calc(${100 / p.lanes}% - 4px)`, transform: drag?.dx ? `translateX(${drag.dx}px)` : undefined, '--pc': colorOfItem(store.data, it) } as React.CSSProperties}
       onPointerDown={begin('move')}
       onPointerMove={move}
@@ -339,15 +340,95 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
           {it.recurrence ? ' · ↻' : ''}
         </span>
       )}
+      {height > 44 && !ghost && it.status !== 'done' && store.data.settings.showMascots !== false && (() => {
+        const pj = it.projectId ? store.data.projects[it.projectId] : null;
+        const dn = (pj?.domainId ? store.data.domains[pj.domainId]?.name : null) || (it.domainId ? store.data.domains[it.domainId]?.name : null);
+        const m = mascotFor(it.title, dn);
+        return m ? <img className="mascot" src={m.src} alt="" title={m.name} width={34} height={34} draggable={false} /> : null;
+      })()}
       {!ghost && <span className="tb-handle" onPointerDown={begin('resize')} aria-label="Changer la durée" title="Glisser pour changer la durée" />}
     </div>
   );
 }
 
 /** Une colonne d'agenda pour un jour. */
+/* ---------- créer en glissant sur l'agenda ---------- */
+type Draft = { a: number; b: number; drawing: boolean };
+
+/** Fenêtre flottante qui apparaît à côté du créneau dessiné : titre, tâche ou événement, Ajouter. */
+function QuickAdd({ date, start, end, anchor, onClose }: { date: string; start: number; end: number; anchor: DOMRect; onClose: () => void }) {
+  const store = useStore();
+  const { fileWithAi, toast } = useUI();
+  const [title, setTitle] = useState('');
+  const [kind, setKind] = useState<'event' | 'task'>('event');
+  const ref = useRef<HTMLFormElement>(null);
+  const W = 300;
+  const right = anchor.right + 10 + W < window.innerWidth;
+  const left = right ? anchor.right + 10 : Math.max(10, anchor.left - W - 10);
+  const top = Math.min(Math.max(10, anchor.top - 8), window.innerHeight - 220);
+
+  useEffect(() => {
+    const away = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const t = setTimeout(() => document.addEventListener('pointerdown', away), 0);
+    document.addEventListener('keydown', esc);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener('pointerdown', away);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [onClose]);
+
+  const add = () => {
+    const t = title.trim();
+    if (!t) return;
+    const it = store.addItem({ title: t, raw: t, kind, status: 'todo', date, time: timeOf(start), duration: end - start });
+    onClose();
+    toast({ text: `${kind === 'event' ? 'Événement' : 'Tâche'} ajouté ${relDate(date).toLowerCase()} à ${timeOf(start)}` });
+    void fileWithAi(it.id); // l'IA le range dans le bon projet, en arrière-plan
+  };
+
+  return (
+    <form
+      ref={ref}
+      className="quick-add"
+      style={{ left, top, width: W }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        add();
+      }}
+      role="dialog"
+      aria-label="Ajouter sur l'agenda"
+    >
+      <div className="qa-when">
+        <i />
+        {timeOf(start)} – {timeOf(end)} · {relDate(date)}
+      </div>
+      <input className="qa-title" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={kind === 'event' ? 'Nom de l’événement' : 'Ce que tu vas faire'} aria-label="Titre" />
+      <div className="qa-foot">
+        <div className="seg" role="tablist" aria-label="Type">
+          <button type="button" className={kind === 'event' ? 'on' : ''} onClick={() => setKind('event')}>
+            Événement
+          </button>
+          <button type="button" className={kind === 'task' ? 'on' : ''} onClick={() => setKind('task')}>
+            Tâche
+          </button>
+        </div>
+        <button className="btn primary sm" type="submit" disabled={!title.trim()}>
+          Ajouter
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function Timeline({ date, entries, showHours, nowLine }: { date: string; entries: Entry[]; showHours: boolean; nowLine: boolean }) {
   const { data } = useStore();
-  const { set } = useUI();
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const draftEl = useRef<HTMLDivElement>(null);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const { dayStart, dayEnd } = data.settings;
   const hours = Array.from({ length: dayEnd - dayStart + 1 }, (_, i) => dayStart + i);
   const placed = layout(entries.filter((e) => e.it.time));
@@ -372,13 +453,36 @@ function Timeline({ date, entries, showHours, nowLine }: { date: string; entries
         data-date={date}
         data-start={dayStart}
         data-hourpx={HOUR_PX}
-        onClick={(e) => {
-          if (e.target !== e.currentTarget) return;
+        onPointerDown={(e) => {
+          if (e.target !== e.currentTarget || e.button !== 0) return;
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-          const min = Math.floor((dayStart * 60 + ((e.clientY - rect.top) / HOUR_PX) * 60) / 30) * 30;
-          set({ captureOpen: true, capturePreset: { date, time: timeOf(min) } });
+          const min = Math.floor((dayStart * 60 + ((e.clientY - rect.top) / HOUR_PX) * 60) / SNAP) * SNAP;
+          setAnchor(null);
+          if (e.pointerType === 'touch') {
+            // Au doigt, on garde le défilement : un appui ouvre directement une heure.
+            setDraft({ a: min, b: min + 60, drawing: false });
+            requestAnimationFrame(() => draftEl.current && setAnchor(draftEl.current.getBoundingClientRect()));
+            return;
+          }
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          setDraft({ a: min, b: min + SNAP, drawing: true });
         }}
-        title="Clique sur un créneau pour y ajouter quelque chose"
+        onPointerMove={(e) => {
+          if (!draft?.drawing) return;
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          const min = Math.max(dayStart * 60, Math.min((dayEnd + 1) * 60, snap(dayStart * 60 + ((e.clientY - rect.top) / HOUR_PX) * 60)));
+          setDraft({ ...draft, b: min });
+        }}
+        onPointerUp={() => {
+          if (!draft?.drawing) return;
+          let a = Math.min(draft.a, draft.b);
+          let b = Math.max(draft.a, draft.b);
+          if (b - a < 30) b = a + 60; // simple clic : une heure par défaut
+          a = Math.max(dayStart * 60, a);
+          setDraft({ a, b, drawing: false });
+          requestAnimationFrame(() => draftEl.current && setAnchor(draftEl.current.getBoundingClientRect()));
+        }}
+        title="Glisse sur l'agenda pour ajouter quelque chose"
       >
         {hours.map((h) => (
           <div key={h} className="tl-line" style={{ top: (h - dayStart) * HOUR_PX }} />
@@ -387,7 +491,30 @@ function Timeline({ date, entries, showHours, nowLine }: { date: string; entries
         {placed.map((p) => (
           <TimeBlock key={`${p.e.it.id}-${p.e.date}`} p={p} dayStart={dayStart} />
         ))}
+        {draft && (
+          <div
+            ref={draftEl}
+            className="tdraft"
+            style={{ top: ((Math.min(draft.a, draft.b) - dayStart * 60) / 60) * HOUR_PX, height: Math.max((Math.abs(draft.b - draft.a) / 60) * HOUR_PX - 2, 12) }}
+          >
+            <span>
+              {timeOf(Math.min(draft.a, draft.b))} – {timeOf(Math.max(draft.a, draft.b))}
+            </span>
+          </div>
+        )}
       </div>
+      {draft && !draft.drawing && anchor && (
+        <QuickAdd
+          date={date}
+          start={draft.a}
+          end={draft.b}
+          anchor={anchor}
+          onClose={() => {
+            setDraft(null);
+            setAnchor(null);
+          }}
+        />
+      )}
     </div>
   );
 }

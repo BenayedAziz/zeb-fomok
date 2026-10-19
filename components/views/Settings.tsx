@@ -85,6 +85,7 @@ export function SettingsView() {
           <div className="toggles">
             <Toggle on={s.showContexts} onChange={(v) => save({ showContexts: v })} label="Contextes" hint="Où tu peux faire l'action : @ordi, @téléphone…" />
             <Toggle on={s.showPriorities} onChange={(v) => save({ showPriorities: v })} label="Priorités" hint="Haute, moyenne, basse." />
+            <Toggle on={s.showMascots} onChange={(v) => save({ showMascots: v })} label="Personnages nuages" hint="Un petit nuage illustre chaque tâche. Coupe-les pour un rendu plus sobre." />
             <Toggle on={s.showWaitingSomeday} onChange={(v) => save({ showWaitingSomeday: v })} label="Listes « En attente » et « Un jour »" hint="Ce que tu as délégué, et les idées pour plus tard." />
           </div>
         </div>

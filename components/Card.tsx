@@ -5,6 +5,7 @@ import { useUI } from './ui-context';
 import { PR, colorOfItem, colorOfProject, ctxLabel, isEvent, recLabel } from '@/lib/gtd';
 import { diffDays, fmtDuration, relDate, timeRange, todayIso } from '@/lib/dates';
 import { Icon } from './icons';
+import { mascotFor, typeMascot } from '@/lib/mascots';
 
 export function Prio({ p }: { p?: string | null }) {
   if (!p || !PR[p]) return null;
@@ -40,6 +41,8 @@ export function Card({ it, o = {} }: { it: Item; o?: CardOpts }) {
   const tick = !o.ghost && (ev || (it.status !== 'someday' && it.status !== 'inbox'));
   const n = it.date ? diffDays(it.date, todayIso()) : 0;
   const color = colorOfItem(data, it);
+  const domainName = (pr?.domainId ? data.domains[pr.domainId]?.name : null) || (it.domainId ? data.domains[it.domainId]?.name : null);
+  const mascot = s.showMascots !== false && !done && !o.ghost && !o.compact ? mascotFor(it.title, domainName) : null;
 
   const open = () => openDrawer({ type: 'item', id: it.id });
   const plan = (e: React.MouseEvent) => {
@@ -50,7 +53,7 @@ export function Card({ it, o = {} }: { it: Item; o?: CardOpts }) {
 
   return (
     <div
-      className={`card${done ? ' done' : ''}${pending ? ' pending' : ''}${ev ? ' event' : ''}${o.ghost ? ' ghost' : ''}${ui.justDone[it.id] ? ' pop' : ''}`}
+      className={`card${done ? ' done' : ''}${pending ? ' pending' : ''}${ev ? ' event' : ''}${o.ghost ? ' ghost' : ''}${ui.justDone[it.id] ? ' just-done' : ''}${mascot ? ' has-mascot' : ''}`}
       style={{ '--pc': color } as React.CSSProperties}
       draggable={o.drag !== false && !o.ghost}
       data-drag={o.ghost ? undefined : it.id}
@@ -74,13 +77,18 @@ export function Card({ it, o = {} }: { it: Item; o?: CardOpts }) {
           }}
           aria-label={done ? (ev ? 'Marquer à venir' : 'Marquer à faire') : ev ? 'Marquer terminé' : 'Marquer fait'}
         >
-          <Icon name="check" />
+          {done && (
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <path className="ck-draw" d="M2.5 6.2l2.3 2.3 4.7-5" />
+            </svg>
+          )}
         </button>
       ) : ev ? (
         <span className="evdot" aria-hidden="true">
           <Icon name="cal" />
         </span>
       ) : null}
+      {pr && !done && !ev && <span className="pbar" style={{ background: colorOfProject(data, pr) }} aria-hidden="true" />}
       {o.showTime && it.time && !o.compact && <span className="time">{it.time}</span>}
       <div className="card-body">
         <div className="card-title">
@@ -90,8 +98,8 @@ export function Card({ it, o = {} }: { it: Item; o?: CardOpts }) {
         <div className="card-meta">
           {(o.compact || o.noDate) && it.time && <span className="chip date">{timeRange(it.time, it.duration)}</span>}
           {pr && !o.noProject && (
-            <span className="chip">
-              <i className="dot" style={{ background: colorOfProject(data, pr) }} />
+            <span className="chip proj" style={{ '--pc': colorOfProject(data, pr) } as React.CSSProperties}>
+              {s.showMascots !== false && typeMascot(domainName) ? <img src={typeMascot(domainName)!} alt="" width={20} height={20} /> : <i className="dot" style={{ background: colorOfProject(data, pr) }} />}
               <span>{pr.name}</span>
             </span>
           )}
@@ -117,9 +125,14 @@ export function Card({ it, o = {} }: { it: Item; o?: CardOpts }) {
               ↻{o.compact ? '' : ` ${recLabel(it)}`}
             </span>
           )}
+          {it.quick && !done && !o.ghost && (
+            <span className="chip quick" title="Se fait en moins de 2 minutes : fais-le maintenant">
+              <Icon name="clock" />2 min
+            </span>
+          )}
           {it.aiSorted && !done && !o.ghost && (
             <span className="chip ai" title={it.aiReason || "Rangé par l'IA"}>
-              IA
+              <Icon name="sparkle" />IA
             </span>
           )}
           {pending && (
@@ -129,6 +142,7 @@ export function Card({ it, o = {} }: { it: Item; o?: CardOpts }) {
           )}
         </div>
       </div>
+      {mascot && <img className="mascot" src={mascot.src} alt="" title={mascot.name} width={64} height={64} loading="lazy" draggable={false} />}
       {!o.compact && !o.ghost && it.status !== 'done' && (
         <div className="card-actions">
           <button className="icon-btn sm" onClick={plan} aria-label="Planifier" title="Planifier">
