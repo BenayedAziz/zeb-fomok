@@ -103,6 +103,8 @@ export interface Settings {
   defaultCal: 'day' | 'week' | 'month';
   /** Fréquence de la revue, en jours (1, 3, 7, 14, 30). */
   reviewEvery: number;
+  /** Personnages nuages sur les cartes (à couper pour un usage plus pro). */
+  showMascots: boolean;
 }
 
 /** Ce qui a été supprimé : récupérable pendant 30 jours. */

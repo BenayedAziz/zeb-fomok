@@ -15,6 +15,7 @@ import { SettingsView } from './views/Settings';
 import { HelpView } from './views/Help';
 import { TrashView } from './views/Trash';
 import { Mic } from './Mic';
+import { Logo } from './Logo';
 import { colorOfProject, counts, domainsSorted, lastReviewDays, list, projectStats, projectsSorted, reviewDue } from '@/lib/gtd';
 import { addDays, longDate, nextMonday, timeOf, todayIso } from '@/lib/dates';
 
@@ -50,11 +51,9 @@ function Sidebar() {
     <>
       <aside className="side" aria-label="Navigation">
         <div className="brand">
-          <span className="logo">SC</span>
-          <div>
-            <b>Second Cerveau</b>
-            <small>Méthode GTD</small>
-          </div>
+          <span className="logo">
+            <Logo />
+          </span>
         </div>
         <div className="nav-group">
           <div className="nav-label">Agir</div>
@@ -180,6 +179,7 @@ function TopBar() {
         <Icon name="menu" />
       </button>
       <span className="title-sm">{titles[ui.view] || ''}</span>
+      <div className="halo">
       <form
         className="capture"
         onSubmit={(e) => {
@@ -189,17 +189,20 @@ function TopBar() {
           capture(t);
         }}
       >
-        <Icon name="plus" />
+        <span className="cap-ico" aria-hidden="true">
+          <Icon name="sparkle" />
+        </span>
         <label htmlFor="captureInput" className="sr">
           Capturer une idée ou une tâche
         </label>
-        <input id="captureInput" value={v} onChange={(e) => voice.type(e.target.value)} placeholder="Note une ou plusieurs choses, l'IA range… (ex. « Réunion RESAH jeudi 14h, relancer François »)" autoComplete="off" enterKeyHint="send" />
+        <input id="captureInput" value={v} onChange={(e) => voice.type(e.target.value)} placeholder="Note une idée, une tâche, un rendez-vous…" autoComplete="off" enterKeyHint="send" />
         <Mic onText={voice.onText} onError={(m) => toast({ text: m })} />
         <span className="kbd">C</span>
-        <button className="btn primary sm" type="submit" disabled={!v.trim()}>
+        <button className="btn primary" type="submit" disabled={!v.trim()}>
           Capturer
         </button>
       </form>
+      </div>
       <div className={`sync ${store.mode === 'db' ? 'ok' : 'demo'}`}>
         <i />
         <span>{store.mode === 'db' ? 'Synchronisé' : 'Mode démo : données dans ce navigateur'}</span>
@@ -323,7 +326,10 @@ function Toast() {
   if (!toastState) return null;
   return (
     <div className="toast" role="status" aria-live="polite" key={toastState.key}>
-      <span>{toastState.text}</span>
+      <span className="t-text">
+        <Icon name="sparkle" />
+        {toastState.text}
+      </span>
       {toastState.chips && (
         <span className="tchips">
           {toastState.chips.map((c) => (
@@ -592,6 +598,9 @@ function Shell() {
         </main>
       </div>
       <button className="fab" onClick={() => set({ captureOpen: true })} aria-label="Capturer">
+        <svg className="fab-cloud" viewBox="0 0 120 60" aria-hidden="true">
+          <path fill="currentColor" d="M32 57 A16 16 0 0 1 21 27 A24 24 0 0 1 67 15 A18 18 0 0 1 99 34 A11.5 11.5 0 0 1 93 57 Z" />
+        </svg>
         <Icon name="plus" />
       </button>
       <TabBar />

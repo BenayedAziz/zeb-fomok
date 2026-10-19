@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS: Settings = {
   dayEnd: 22,
   defaultCal: 'day',
   reviewEvery: 7,
+  showMascots: true,
 };
 
 export const STATUSES: [Status, string][] = [

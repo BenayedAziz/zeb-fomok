@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { Logo } from '@/components/Logo';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -42,11 +43,9 @@ export default function Login() {
     <main className="login">
       <div className="login-card">
         <div className="brand" style={{ padding: 0 }}>
-          <span className="logo">SC</span>
-          <div>
-            <b>Second Cerveau</b>
-            <small>Méthode GTD</small>
-          </div>
+          <span className="logo">
+            <Logo size={56} />
+          </span>
         </div>
         <div>
           <h1>

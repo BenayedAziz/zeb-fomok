@@ -56,6 +56,8 @@ interface UIApi {
   dismissToast: () => void;
   capture: (text: string, extra?: Partial<Item>) => Promise<void>;
   aiSort: (id: string) => Promise<void>;
+  /** Ajout direct dans l'agenda : l'IA choisit seulement le projet et le domaine, sans toucher au reste. */
+  fileWithAi: (id: string) => Promise<void>;
   toggleDone: (id: string) => void;
   schedule: (id: string, date: string | null, time?: string | null) => void;
   removeItem: (id: string) => void;
@@ -227,6 +229,9 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
         const p = itemFromAi(s.get(), r);
         if (r.newProject && typeof r.newProject.name === 'string' && r.newProject.name.trim() && !p.projectId) {
           const key = r.newProject.name.trim().toLowerCase();
+          // Un projet du même nom existe déjà : on s'y rattache au lieu d'en créer un doublon.
+          const same = Object.values(s.get().projects).find((x) => x.status !== 'done' && x.name.trim().toLowerCase() === key);
+          if (same) newProjects[key] = same.id;
           if (!newProjects[key]) {
             const dom = r.newProject.domainId && d.domains[r.newProject.domainId] ? r.newProject.domainId : p.domainId || null;
             const np = s.addProject({
@@ -241,6 +246,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
             chips.push(`Nouveau projet : ${np.name}`);
           }
           p.projectId = newProjects[key];
+          if (!p.domainId) p.domainId = s.get().projects[p.projectId]?.domainId || null;
           if (p.status === 'inbox') p.status = 'todo';
         }
         let id: string;
@@ -329,6 +335,50 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       }
     },
     [applyAI, toast],
+  );
+
+  const fileWithAi = useCallback(
+    async (id: string) => {
+      const s = storeRef.current;
+      const it = s.get().items[id];
+      if (!it) return;
+      try {
+        const res = await fetch('/api/classify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: it.title, ctx: aiContext(s.get()) }),
+        });
+        if (!res.ok) return; // l'élément est déjà créé : pas de projet, ce n'est pas grave
+        const body = await res.json().catch(() => ({}));
+        const result = body.result || {};
+        const r: AiItem | undefined = (Array.isArray(result.items) ? result.items : [result])[0];
+        const cur = s.get().items[id];
+        if (!r || !cur || cur.projectId) return;
+        const p = itemFromAi(s.get(), r);
+        let projectId = p.projectId || null;
+        let created = '';
+        const np = r.newProject;
+        if (!projectId && np && typeof np.name === 'string' && np.name.trim()) {
+          const key = np.name.trim().toLowerCase();
+          const same = Object.values(s.get().projects).find((x) => x.status !== 'done' && x.name.trim().toLowerCase() === key);
+          if (same) projectId = same.id;
+          else {
+            const dom = np.domainId && s.get().domains[np.domainId] ? np.domainId : p.domainId || null;
+            const pr = s.addProject({ name: np.name.trim().slice(0, 120), outcome: np.outcome?.slice(0, 300) || null, domainId: dom, color: freeColor(s.get()), aiSorted: true });
+            projectId = pr.id;
+            created = pr.name;
+          }
+        }
+        const domainId = p.domainId || (projectId ? s.get().projects[projectId]?.domainId : null) || cur.domainId || null;
+        if (!projectId && !domainId) return;
+        s.updateItem(id, { projectId, domainId });
+        const name = projectId ? s.get().projects[projectId]?.name : null;
+        if (name) toast({ text: created ? `Nouveau projet : ${name}` : `Rangé dans ${name}` });
+      } catch {
+        /* hors ligne : l'élément reste tel quel */
+      }
+    },
+    [toast],
   );
 
   /**
@@ -458,11 +508,12 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       dismissToast,
       capture,
       aiSort,
+      fileWithAi,
       toggleDone,
       schedule,
       removeItem,
     }),
-    [ui, set, go, toast, toastState, dismissToast, capture, aiSort, toggleDone, schedule, removeItem],
+    [ui, set, go, toast, toastState, dismissToast, capture, aiSort, fileWithAi, toggleDone, schedule, removeItem],
   );
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
 }

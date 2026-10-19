@@ -10,7 +10,11 @@
 1. **UX et UI** inspirées de Mobbin : choisir des écrans de référence (capture, journée, calendrier, revue) et refaire les vues.
    - S'inspirer aussi de **Miro** : sensation de tableau libre, cartes qu'on déplace à la main, zoom, regroupements visuels.
    - Mode « Clarifier l'inbox » : un élément à la fois, questions GTD en gros boutons, suggestion de l'IA présélectionnée.
-2. **Connexions Notion, Gmail, Outlook, agendas** : d'abord l'import ponctuel déjà codé (créer les applis OAuth et poser leurs clés), puis la synchro continue (voir plus bas).
+   - **Glisser-déposer partout, évident au premier coup d'œil** : carte vers un jour ou une heure (journée, semaine, mois), vers un projet ou un domaine du menu, vers « Un jour », « En attente » ou la corbeille ; réordonner les tâches à la main ; zones de dépôt qui s'allument et petit rebond à l'arrivée.
+   - Fait : charte « Ciel » (Lexend, logo nuage, personnages), créer en glissant sur l'agenda avec fenêtre flottante.
+2. **Connexions Notion, Gmail, Outlook, agendas, Slack, Microsoft Teams** (tout ce qui touche aux projets des gens) : d'abord l'import ponctuel déjà codé pour Notion / Google / Microsoft, puis **connexion permanente 24 h/24** pour que le calendrier et les projets soient toujours à jour (voir plus bas).
+   - Slack : messages où on est mentionné, messages enregistrés, rappels → captures dans l'inbox.
+   - Teams : réunions (via le calendrier Outlook) et mentions dans les canaux (Microsoft Graph).
 3. Page « Invités » dans les Réglages (liste en base au lieu de `ALLOWED_EMAILS`, sans redéploiement).
 4. Tâche quotidienne (Vercel Cron) qui garde Supabase actif.
 5. Trouver un nom.
@@ -39,7 +43,7 @@ Objectif : chaque utilisateur branche ses comptes, l'appli récolte et range dan
 - Google : console.cloud.google.com, écran de consentement en mode **Test** avec les emails des invités en testeurs, identifiant OAuth « Web », retour `/api/connect/google/callback` → `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
 - Microsoft : portail Entra, inscription d'appli « comptes personnels et professionnels », retour `/api/connect/microsoft/callback` → `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`.
 
-**Étape B, synchro continue.** Table `connections` (user_id, fournisseur, jeton de rafraîchissement **chiffré** avec une clé serveur dédiée, dernière synchro), RLS `user_id = auth.uid()`. Tâche planifiée Vercel Cron : lit les nouveautés depuis la dernière synchro, l'IA en tire les actions et rendez-vous, ils arrivent dans l'inbox. Bouton « Déconnecter » qui efface le jeton.
+**Étape B, synchro continue (24 h/24, objectif : rien à recopier à la main).** Table `connections` (user_id, fournisseur, jeton de rafraîchissement **chiffré** avec une clé serveur dédiée, dernière synchro), RLS `user_id = auth.uid()`. Tâche planifiée Vercel Cron : lit les nouveautés depuis la dernière synchro, l'IA en tire les actions et rendez-vous, ils arrivent dans l'inbox. Bouton « Déconnecter » qui efface le jeton.
 
 **Contraintes à connaître :**
 - Gmail (`gmail.readonly`) est un accès **restreint** chez Google : sans vérification, 100 utilisateurs maximum, écran « appli non vérifiée », et en mode Test les accès expirent au bout de 7 jours. Pour ouvrir à tous : vérification Google + audit de sécurité CASA, à renouveler chaque année. Pour un cercle d'amis, le mode Test suffit.
