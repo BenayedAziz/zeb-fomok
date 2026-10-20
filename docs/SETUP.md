@@ -115,3 +115,10 @@ Pas de connexion directe possible. Dans l'app Calendrier sur icloud.com, partage
 - Une branche par chantier (`git checkout -b ux-capture`), une pull request, Vercel donne un lien de test, puis fusion dans `main`.
 - `npm run typecheck` et `npm run build` doivent passer avant de fusionner.
 - Le fichier `CLAUDE.md` décrit le projet pour Claude Code : ouvre le dépôt avec Claude Code et demande les évolutions directement.
+
+## Comptes : email + mot de passe
+
+- Connexion par email et mot de passe, création de compte avec email de confirmation, « Mot de passe oublié ».
+- Un compte créé avant (par lien) n'a pas de mot de passe connu : passer une fois par « Mot de passe oublié ».
+- Les liens envoyés par email (confirmation, mot de passe oublié) passent par `/auth/finish` en flux implicite : ils marchent même ouverts sur un autre appareil, sans toucher aux modèles d'email Supabase. Seule condition : `https://ton-site.vercel.app/**` dans Authentication > URL Configuration > Redirect URLs.
+- L'envoi d'emails intégré à Supabase est limité à quelques emails par heure : brancher un vrai fournisseur (Resend, Brevo) dans Authentication > SMTP avant d'inviter du monde.

@@ -12,6 +12,7 @@
    - Mode « Clarifier l'inbox » : un élément à la fois, questions GTD en gros boutons, suggestion de l'IA présélectionnée.
    - **Glisser-déposer partout, évident au premier coup d'œil** : carte vers un jour ou une heure (journée, semaine, mois), vers un projet ou un domaine du menu, vers « Un jour », « En attente » ou la corbeille ; réordonner les tâches à la main ; zones de dépôt qui s'allument et petit rebond à l'arrivée.
    - Fait : charte « Ciel » (Lexend, logo nuage, personnages), créer en glissant sur l'agenda avec fenêtre flottante.
+   - **Personnages « pro »** (à générer plus tard sur Lovable, même discussion que la charte) : décliner les 54 personnages dans l'un des deux styles sobres, Option A « L'Élégant » (lunettes et cravate, esprit cabinet) ou Option B « L'Épuré » (col de chemise, sourire calme). Dans Réglages, le choix deviendrait : Personnages joyeux / Personnages pro / Aucun. Images de départ déjà dans `public/mascots/alt-pro-a.webp` et `alt-pro-b.webp`.
 2. **Connexions Notion, Gmail, Outlook, agendas, Slack, Microsoft Teams** (tout ce qui touche aux projets des gens) : d'abord l'import ponctuel déjà codé pour Notion / Google / Microsoft, puis **connexion permanente 24 h/24** pour que le calendrier et les projets soient toujours à jour (voir plus bas).
    - Slack : messages où on est mentionné, messages enregistrés, rappels → captures dans l'inbox.
    - Teams : réunions (via le calendrier Outlook) et mentions dans les canaux (Microsoft Graph).

@@ -22,6 +22,17 @@ export async function getServerSupabase() {
   });
 }
 
+/**
+ * Client pour les emails (confirmation, mot de passe oublié) en flux « implicite » : le lien reçu
+ * renvoie la session dans l'adresse, donc il marche sur n'importe quel appareil, pas seulement
+ * dans le navigateur qui l'a demandé.
+ */
+export function getEmailLinkSupabase() {
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+    auth: { flowType: 'implicit', persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+}
+
 /** Client avec la clé service : uniquement côté serveur, contourne les règles d'accès. */
 export function getAdminSupabase() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;

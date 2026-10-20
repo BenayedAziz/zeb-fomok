@@ -866,3 +866,12 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .ad-chip { background: linear-gradient(135deg, var(--sky-200), var(--sky-300)); color: var(--ink); border-radius: 12px; }
 .mchip.event { background: linear-gradient(135deg, var(--sky-200), var(--sky-300)); color: var(--ink); }
 .mchip.event .mono { color: var(--sky-700); }
+
+/* Connexion */
+.login-tabs { display: grid; grid-template-columns: 1fr 1fr; }
+.login-tabs button { height: 36px; font-size: 14px; }
+.login-links { display: flex; justify-content: center; }
+.linkish { color: var(--sky-700); font-size: 13.5px; font-weight: 500; padding: 4px 8px; border-radius: 10px; }
+.linkish:hover { background: var(--sky-100); }
+.login .alert { line-height: 1.5; }
+.login .alert a { color: inherit; font-weight: 600; }
