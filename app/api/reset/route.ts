@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getServerSupabase, isAllowedEmail, serverSupabaseConfigured } from '@/lib/supabase/server';
+import { getEmailLinkSupabase, isAllowedEmail, serverSupabaseConfigured } from '@/lib/supabase/server';
 
 /** Mot de passe oublié (ou premier mot de passe pour un compte créé par lien) : envoie un lien pour en choisir un. */
 export async function POST(req: Request) {
@@ -10,8 +10,8 @@ export async function POST(req: Request) {
   // On répond pareil que l'adresse soit invitée ou non : on ne dit pas qui a un compte.
   if (!isAllowedEmail(mail)) return NextResponse.json({ ok: true });
   const origin = process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin;
-  const supabase = await getServerSupabase();
-  const { error } = await supabase.auth.resetPasswordForEmail(mail, { redirectTo: `${origin}/auth/callback?next=/reset` });
+  const supabase = getEmailLinkSupabase();
+  const { error } = await supabase.auth.resetPasswordForEmail(mail, { redirectTo: `${origin}/auth/finish?next=/reset` });
   if (error && ((error as { code?: string }).code || '').includes('rate_limit')) return NextResponse.json({ error: 'rate_limit' }, { status: 429 });
   return NextResponse.json({ ok: true });
 }

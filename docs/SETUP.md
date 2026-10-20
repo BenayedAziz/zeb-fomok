@@ -120,7 +120,5 @@ Pas de connexion directe possible. Dans l'app Calendrier sur icloud.com, partage
 
 - Connexion par email et mot de passe, création de compte avec email de confirmation, « Mot de passe oublié ».
 - Un compte créé avant (par lien) n'a pas de mot de passe connu : passer une fois par « Mot de passe oublié ».
-- Pour que les liens marchent même ouverts sur un autre appareil (téléphone), dans Supabase > Authentication > Emails > Templates :
-  - **Confirm signup** : `<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next=/app">Confirmer mon adresse</a>`
-  - **Reset Password** : `<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/reset">Choisir un nouveau mot de passe</a>`
+- Les liens envoyés par email (confirmation, mot de passe oublié) passent par `/auth/finish` en flux implicite : ils marchent même ouverts sur un autre appareil, sans toucher aux modèles d'email Supabase. Seule condition : `https://ton-site.vercel.app/**` dans Authentication > URL Configuration > Redirect URLs.
 - L'envoi d'emails intégré à Supabase est limité à quelques emails par heure : brancher un vrai fournisseur (Resend, Brevo) dans Authentication > SMTP avant d'inviter du monde.

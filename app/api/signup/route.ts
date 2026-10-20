@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getServerSupabase, isAllowedEmail, serverSupabaseConfigured } from '@/lib/supabase/server';
+import { getEmailLinkSupabase, isAllowedEmail, serverSupabaseConfigured } from '@/lib/supabase/server';
 
 /** Création de compte : email + mot de passe, puis lien de confirmation envoyé par email. */
 export async function POST(req: Request) {
@@ -10,8 +10,8 @@ export async function POST(req: Request) {
   if (!password || password.length < 8) return NextResponse.json({ error: 'weak_password' }, { status: 400 });
   if (!isAllowedEmail(mail)) return NextResponse.json({ error: 'not_invited' }, { status: 403 });
   const origin = process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin;
-  const supabase = await getServerSupabase();
-  const { data, error } = await supabase.auth.signUp({ email: mail, password, options: { emailRedirectTo: `${origin}/auth/callback?next=/app` } });
+  const supabase = getEmailLinkSupabase();
+  const { data, error } = await supabase.auth.signUp({ email: mail, password, options: { emailRedirectTo: `${origin}/auth/finish?next=/app` } });
   if (error) {
     const code = (error as { code?: string }).code || '';
     if (code === 'weak_password') return NextResponse.json({ error: 'weak_password' }, { status: 400 });
