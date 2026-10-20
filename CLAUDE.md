@@ -4,7 +4,7 @@ Appli GTD (Getting Things Done) en français. Tutoiement, ton direct, pas de jar
 
 ## Pile
 - Next.js 15 App Router + TypeScript strict, React 19, pas de framework CSS : tout le style est dans `app/globals.css` (jetons de couleur clair/sombre en haut du fichier, classes par composant).
-- Supabase : auth par lien magique, tables `domains`, `goals`, `projects`, `items`, `pins`, `settings`, `reviews`, `ai_usage` (voir `supabase/migrations`). Row Level Security partout : `user_id = auth.uid()`. Toute nouvelle table doit avoir sa policy.
+- Supabase : comptes email + mot de passe avec confirmation par email (`/api/login`, `/api/signup`, `/api/reset`, retours dans `/auth/callback` et `/auth/confirm`), tables `domains`, `goals`, `projects`, `items`, `pins`, `settings`, `reviews`, `ai_usage` (voir `supabase/migrations`). Row Level Security partout : `user_id = auth.uid()`. Toute nouvelle table doit avoir sa policy.
 - IA : `@anthropic-ai/sdk` côté serveur uniquement (`lib/server/ai.ts`), routes `app/api/*`. Chaque appel passe par `guardAi()` (session + quota par jour).
 - Sans variables Supabase, l'appli tourne en **mode démo** (localStorage) : garder ce mode fonctionnel, il sert aux tests.
 
