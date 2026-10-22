@@ -40,36 +40,49 @@ function NavBtn({ view, label, icon, n, hot, warn }: { view: View; label: string
   );
 }
 
-/* Domaines et projets repliés par défaut ; on se souvient de ce qui est ouvert. On déplie tout seul le chemin du projet affiché. */
-function useOpened(data: Data, current: string | null) {
-  const [opened, setOpened] = useState<Set<string>>(() => new Set());
+/* Domaines ouverts par défaut, sous-projets repliés ; on se souvient des choix. Le chemin du projet affiché se déplie tout seul. */
+const readSet = (k: string) => {
+  try {
+    return new Set<string>(JSON.parse(localStorage.getItem(k) || '[]'));
+  } catch {
+    return new Set<string>();
+  }
+};
+const writeSet = (k: string, s: Set<string>) => {
+  try {
+    localStorage.setItem(k, JSON.stringify([...s]));
+  } catch {}
+};
+function useTree(data: Data, current: string | null) {
+  const [closedDoms, setClosedDoms] = useState<Set<string>>(() => new Set());
+  const [openProj, setOpenProj] = useState<Set<string>>(() => new Set());
   useEffect(() => {
-    try {
-      setOpened(new Set(JSON.parse(localStorage.getItem('sc-open-nav') || '[]')));
-    } catch {}
+    setClosedDoms(readSet('sc-closed-doms'));
+    setOpenProj(readSet('sc-open-proj'));
   }, []);
   useEffect(() => {
     if (!current || !data.projects[current]) return;
-    const path: string[] = [];
-    let p: Project | null = data.projects[current];
-    while (p && !path.includes(p.id)) {
-      path.push(p.id);
-      if (p.domainId) path.push(p.domainId);
+    const parents: string[] = [];
+    const doms: string[] = [];
+    let p: Project | null = parentOf(data, data.projects[current]);
+    if (data.projects[current].domainId) doms.push(data.projects[current].domainId!);
+    while (p && !parents.includes(p.id)) {
+      parents.push(p.id);
+      if (p.domainId) doms.push(p.domainId);
       p = parentOf(data, p);
     }
-    setOpened((o) => (path.every((x) => o.has(x)) ? o : new Set([...o, ...path])));
+    setOpenProj((o) => (parents.every((x) => o.has(x)) ? o : new Set([...o, ...parents])));
+    setClosedDoms((c) => (doms.some((x) => c.has(x)) ? new Set([...c].filter((x) => !doms.includes(x))) : c));
   }, [current, data]);
-  const toggle = (id: string) =>
-    setOpened((o) => {
+  const flip = (set: React.Dispatch<React.SetStateAction<Set<string>>>, key: string) => (id: string) =>
+    set((o) => {
       const n = new Set(o);
       if (n.has(id)) n.delete(id);
       else n.add(id);
-      try {
-        localStorage.setItem('sc-open-nav', JSON.stringify([...n]));
-      } catch {}
+      writeSet(key, n);
       return n;
     });
-  return { opened, toggle };
+  return { closedDoms, openProj, toggleDom: flip(setClosedDoms, 'sc-closed-doms'), toggleProj: flip(setOpenProj, 'sc-open-proj') };
 }
 
 function Caret({ open, onClick, label }: { open: boolean; onClick: () => void; label: string }) {
@@ -89,15 +102,85 @@ function ProjNav({ p, depth, projects, opened, toggle }: { p: Project; depth: nu
   return (
     <>
       <div className="nav-row" style={{ '--depth': depth } as React.CSSProperties}>
-        <button className={`nav sub${ui.view === 'project' && ui.projectId === p.id ? ' on' : ''}`} onClick={() => go('project', { projectId: p.id })}>
+        <button className={`nav proj${ui.view === 'project' && ui.projectId === p.id ? ' on' : ''}`} onClick={() => go('project', { projectId: p.id })} title={p.name}>
           <i className="pdot" style={{ background: colorOfProject(data, p) }} />
           <span>{p.name}</span>
           {st.open.length ? <span className="n">{st.open.length}</span> : null}
         </button>
-        {kids.length > 0 && <Caret open={isOpen} onClick={() => toggle(p.id)} label={p.name} />}
+        {kids.length > 0 ? <Caret open={isOpen} onClick={() => toggle(p.id)} label={p.name} /> : <span className="caret-gap" />}
       </div>
       {isOpen && kids.map((k) => <ProjNav key={k.id} p={k} depth={depth + 1} projects={projects} opened={opened} toggle={toggle} />)}
     </>
+  );
+}
+
+/** Le compte en bas du menu : les réglages et le reste s'ouvrent dans un petit menu, pour laisser la place aux projets. */
+function AccountMenu() {
+  const store = useStore();
+  const { go } = useUI();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('pointerdown', away);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+  const pick = (v: View) => {
+    setOpen(false);
+    go(v);
+  };
+  const who = store.name || store.email?.split('@')[0] || 'Mode démo';
+  return (
+    <div className="acct" ref={ref}>
+      {open && (
+        <div className="acct-pop" role="menu">
+          {isAdmin(store.email) && (
+            <button className="nav" role="menuitem" onClick={() => pick('feedback')}>
+              <Icon name="chat" />
+              <span>Remarques des testeurs</span>
+            </button>
+          )}
+          <button className="nav" role="menuitem" onClick={() => pick('settings')}>
+            <Icon name="gear" />
+            <span>Réglages</span>
+          </button>
+          <button className="nav" role="menuitem" onClick={() => pick('trash')}>
+            <Icon name="trash" />
+            <span>Corbeille</span>
+          </button>
+          <button className="nav" role="menuitem" onClick={() => pick('help')}>
+            <Icon name="help" />
+            <span>Comment ça marche</span>
+          </button>
+          <button className="nav" role="menuitem" onClick={() => pick('onboarding')}>
+            <Icon name="chat" />
+            <span>Refaire l&apos;entretien</span>
+          </button>
+          {store.mode === 'db' && (
+            <button className="nav" role="menuitem" onClick={() => store.signOut()}>
+              <Icon name="out" />
+              <span>Se déconnecter</span>
+            </button>
+          )}
+        </div>
+      )}
+      <button className={`acct-btn${open ? ' on' : ''}`} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu">
+        <span className="avatar" aria-hidden="true">
+          {who.charAt(0).toUpperCase()}
+        </span>
+        <span className="acct-who">
+          <b>{who}</b>
+          {store.email && <small>{store.email}</small>}
+        </span>
+        <Icon name="gear" />
+      </button>
+    </div>
   );
 }
 
@@ -128,109 +211,106 @@ function Sidebar() {
   const projects = projectsSorted(data).filter((p) => p.status === 'active');
   const orphans = projects.filter((p) => (!p.domainId || !data.domains[p.domainId]) && !parentOf(data, p));
   const pinned = projects.filter((p) => p.pinned);
-  const { opened, toggle } = useOpened(data, ui.view === 'project' ? ui.projectId : null);
+  const { closedDoms, openProj, toggleDom, toggleProj } = useTree(data, ui.view === 'project' ? ui.projectId : null);
+  const groups = [
+    ...doms.map((d) => ({ id: d.id, name: d.name, color: `var(--${d.color})`, top: projects.filter((p) => p.domainId === d.id && !parentOf(data, p)) })),
+    ...(orphans.length ? [{ id: 'none', name: 'Sans domaine', color: 'var(--line-2)', top: orphans }] : []),
+  ];
   return (
     <>
       <aside className="side" aria-label="Navigation">
         <div className="side-top">
-        <div className="brand">
-          <span className="logo">
-            <Logo />
-          </span>
-        </div>
-        <div className="nav-group">
-          <div className="nav-label">Agir</div>
-          <NavBtn view="day" label="Ma journée" icon="day" n={c.overdue || undefined} warn />
-        </div>
-        <div className="nav-group">
-          <div className="nav-label">Capturer</div>
-          <NavBtn view="inbox" label="Inbox" icon="inbox" n={c.inbox || undefined} hot />
-        </div>
-        <div className="nav-group">
-          <div className="nav-label">Organiser</div>
-          <NavBtn view="next" label="Prochaines actions" icon="next" n={c.next || undefined} />
-          {data.settings.showWaitingSomeday && (
-            <>
-              <NavBtn view="waiting" label="En attente" icon="wait" n={c.waiting || undefined} />
-              <NavBtn view="someday" label="Un jour / peut-être" icon="someday" n={c.someday || undefined} />
-            </>
-          )}
-          <NavBtn view="projects" label="Projets" icon="proj" />
-          <NavBtn view="pins" label="Épinglés" icon="pin" n={c.pins || undefined} />
-        </div>
-        <div className="nav-group">
-          <div className="nav-label">Prendre du recul</div>
-          <NavBtn view="goals" label="Objectifs" icon="goal" />
-          <NavBtn view="review" label="Revue" icon="review" n={reviewDue(data) ? (lr === null ? '!' : `${lr} j`) : undefined} warn />
-          <NavBtn view="journal" label="Journal" icon="done" />
-        </div>
-        </div>
-        <div className="side-mid">
-        {pinned.length > 0 && (
-          <div className="nav-group">
-            <div className="nav-label">Épinglés</div>
-            {pinned.map((p) => (
-              <button key={p.id} className={`nav sub pinned${ui.view === 'project' && ui.projectId === p.id ? ' on' : ''}`} onClick={() => go('project', { projectId: p.id })}>
-                <i className="pdot" style={{ background: colorOfProject(data, p) }} />
-                <span>{p.name}</span>
-              </button>
-            ))}
+          <div className="brand">
+            <span className="logo">
+              <Logo />
+            </span>
           </div>
-        )}
-        <div className="nav-group">
-          <div className="nav-label">
-            Domaines
-            <button onClick={() => openDrawer({ type: 'domain', id: null })} aria-label="Ajouter un domaine" title="Ajouter un domaine">
-              +
+          <nav className="nav-group">
+            <NavBtn view="day" label="Ma journée" icon="day" n={c.overdue || undefined} warn />
+            <NavBtn view="inbox" label="Inbox" icon="inbox" n={c.inbox || undefined} hot />
+            <i className="nav-sep" />
+            <NavBtn view="next" label="Prochaines actions" icon="next" n={c.next || undefined} />
+            {data.settings.showWaitingSomeday && (
+              <>
+                <NavBtn view="waiting" label="En attente" icon="wait" n={c.waiting || undefined} />
+                <NavBtn view="someday" label="Un jour / peut-être" icon="someday" n={c.someday || undefined} />
+              </>
+            )}
+            <NavBtn view="pins" label="Ressources épinglées" icon="pin" n={c.pins || undefined} />
+            <i className="nav-sep" />
+            <div className="nav-mini" role="group" aria-label="Prendre du recul">
+              {(
+                [
+                  ['goals', 'Objectifs', 'goal', false],
+                  ['review', 'Revue', 'review', reviewDue(data)],
+                  ['journal', 'Journal', 'done', false],
+                ] as [View, string, IconName, boolean][]
+              ).map(([v, l, ic, due]) => (
+                <button key={v} className={`${ui.view === v ? 'on' : ''}${due ? ' due' : ''}`} onClick={() => go(v)} aria-current={ui.view === v ? 'page' : undefined} title={v === 'review' && due ? (lr === null ? 'Pas encore de revue' : `Dernière revue il y a ${lr} j`) : l}>
+                  <Icon name={ic} />
+                  <span>{l}</span>
+                </button>
+              ))}
+            </div>
+          </nav>
+        </div>
+
+        <div className="side-mid">
+          <div className="mid-head">
+            <button className={`mid-title${ui.view === 'projects' && !ui.domainFilter ? ' on' : ''}`} onClick={() => go('projects')}>
+              <Icon name="proj" />
+              Projets
+            </button>
+            <button className="mid-add" onClick={() => openDrawer({ type: 'project', id: null })} aria-label="Nouveau projet" title="Nouveau projet">
+              <Icon name="plus" />
             </button>
           </div>
-          {!doms.length && <div className="hint" style={{ padding: '2px 8px' }}>Aucun domaine pour l&apos;instant.</div>}
-          {doms.map((d) => {
-            const top = projects.filter((p) => p.domainId === d.id && !parentOf(data, p));
-            const isOpen = opened.has(d.id);
-            return (
-              <div key={d.id}>
-                <div className="nav-row">
-                  <button className={`nav${ui.view === 'projects' && ui.domainFilter === d.id ? ' on' : ''}`} onClick={() => go('projects', { domain: d.id })}>
-                    <i className="sw" style={{ background: `var(--${d.color})` }} />
-                    <span>{d.name}</span>
-                    {!isOpen && top.length > 0 && <span className="n">{top.length}</span>}
+          {pinned.length > 0 && (
+            <div className="proj-group pinned">
+              {pinned.map((p) => (
+                <div className="nav-row" key={p.id}>
+                  <button className={`nav proj${ui.view === 'project' && ui.projectId === p.id ? ' on' : ''}`} onClick={() => go('project', { projectId: p.id })} title={p.name}>
+                    <Icon name="pin" />
+                    <span>{p.name}</span>
                   </button>
-                  {top.length > 0 && <Caret open={isOpen} onClick={() => toggle(d.id)} label={d.name} />}
+                  <span className="caret-gap" />
                 </div>
-                {isOpen && top.map((p) => <ProjNav key={p.id} p={p} depth={0} projects={projects} opened={opened} toggle={toggle} />)}
+              ))}
+            </div>
+          )}
+          {groups.map((g) => {
+            const isOpen = !closedDoms.has(g.id);
+            if (!g.top.length && g.id === 'none') return null;
+            return (
+              <div className="proj-group" key={g.id}>
+                <div className="dom-row">
+                  <button className={`nav-caret${isOpen ? ' open' : ''}`} onClick={() => toggleDom(g.id)} aria-expanded={isOpen} aria-label={`${isOpen ? 'Replier' : 'Déplier'} ${g.name}`} disabled={!g.top.length}>
+                    <Icon name="right" />
+                  </button>
+                  <button className={`dom-name${ui.view === 'projects' && ui.domainFilter === g.id ? ' on' : ''}`} onClick={() => (g.id === 'none' ? go('projects') : go('projects', { domain: g.id }))}>
+                    <i className="sw" style={{ background: g.color }} />
+                    <span>{g.name}</span>
+                    {g.top.length > 0 && <span className="n">{g.top.length}</span>}
+                  </button>
+                </div>
+                {isOpen && g.top.map((p) => <ProjNav key={p.id} p={p} depth={0} projects={projects} opened={openProj} toggle={toggleProj} />)}
               </div>
             );
           })}
-          {orphans.length > 0 && (
-            <>
-              <div className="nav-label" style={{ paddingTop: 8 }}>
-                Sans domaine
-              </div>
-              {orphans.map((p) => (
-                <ProjNav key={p.id} p={p} depth={0} projects={projects} opened={opened} toggle={toggle} />
-              ))}
-            </>
-          )}
-        </div>
-        </div>
-        <div className="side-foot">
-          <NavBtn view="import" label="Importer mes outils" icon="import" />
-          {isAdmin(store.email) && <NavBtn view="feedback" label="Remarques des testeurs" icon="chat" />}
-          <NavBtn view="trash" label="Corbeille" icon="trash" />
-          <NavBtn view="settings" label="Réglages" icon="gear" />
-          <NavBtn view="help" label="Comment ça marche" icon="help" />
-          <button className="nav" onClick={() => go('onboarding')}>
-            <Icon name="chat" />
-            <span>Refaire l&apos;entretien</span>
-          </button>
-          {store.mode === 'db' && (
-            <button className="nav" onClick={() => store.signOut()}>
-              <Icon name="out" />
-              <span>Se déconnecter</span>
+          {!projects.length && (
+            <button className="mid-empty" onClick={() => openDrawer({ type: 'project', id: null })}>
+              Pas encore de projet. Capture une idée, l&apos;IA en crée, ou crée-le ici.
             </button>
           )}
-          {store.email && <div className="who">{store.email}</div>}
+          <button className="mid-dom" onClick={() => openDrawer({ type: 'domain', id: null })}>
+            <Icon name="plus" />
+            Nouveau domaine de vie
+          </button>
+        </div>
+
+        <div className="side-foot">
+          <NavBtn view="import" label="Importer mes outils" icon="import" />
+          <AccountMenu />
         </div>
       </aside>
       <div className="side-scrim" onClick={() => set({ navOpen: false })} />

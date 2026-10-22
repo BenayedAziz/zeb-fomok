@@ -1166,3 +1166,70 @@ button.dom-title:hover { color: var(--sky-700); }
   .side-top .nav-label { padding-top: 0; }
   .side-foot .nav { height: 28px; min-height: 28px; }
 }
+
+/* =====================================================================
+   Menu v3 : navigation compacte en haut, projets au large au milieu, compte en bas
+   ===================================================================== */
+.side { gap: 0; padding: 14px 10px calc(10px + env(safe-area-inset-bottom, 0px)); }
+.side-top { gap: 6px; padding-bottom: 8px; }
+.side-top .brand { padding: 0 10px 6px; }
+.side-top .nav-group { gap: 1px; }
+.side-top .nav { height: 34px; min-height: 34px; font-size: 14px; gap: 11px; padding: 0 10px; }
+.nav-sep { display: block; height: 1px; background: var(--line); margin: 6px 10px; }
+
+.side-mid { margin: 0 -10px; padding: 10px 10px 12px; gap: 2px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); -webkit-mask-image: none; mask-image: none; min-height: 120px; }
+.mid-head { display: flex; align-items: center; justify-content: space-between; padding: 0 2px 4px 0; position: sticky; top: -10px; z-index: 1; background: linear-gradient(var(--side), var(--side)); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); margin-top: -10px; padding-top: 10px; }
+.mid-title { display: flex; align-items: center; gap: 11px; height: 32px; padding: 0 10px; border-radius: 12px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.mid-title svg, .mid-add svg, .mid-dom svg, .nav.proj svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.mid-title:hover, .mid-title.on { background: var(--sky-100); color: var(--sky-700); }
+.mid-add { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; color: var(--muted); }
+.mid-add:hover { background: var(--sky-100); color: var(--ink); }
+.proj-group { display: flex; flex-direction: column; gap: 1px; margin-top: 6px; }
+.proj-group.pinned { margin-top: 2px; padding-bottom: 6px; border-bottom: 1px dashed var(--line); }
+.dom-row { display: flex; align-items: center; gap: 0; height: 28px; }
+.dom-row .nav-caret { width: 22px; height: 22px; border-radius: 8px; margin-left: 2px; }
+.dom-row .nav-caret svg { width: 12px; height: 12px; }
+.dom-row .nav-caret:disabled { opacity: 0.3; }
+.dom-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px 0 4px; border-radius: 10px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); text-align: left; }
+.dom-name span:not(.n) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dom-name .sw { width: 8px; height: 8px; border-radius: 3px; flex: none; }
+.dom-name .n { margin-left: auto; font-size: 11px; letter-spacing: 0; color: var(--faint); font-weight: 500; }
+.dom-name:hover, .dom-name.on { color: var(--ink); background: color-mix(in oklab, var(--sky-100) 60%, transparent); }
+.side-mid .nav-row { padding-left: calc(18px + var(--depth, 0) * 14px); gap: 0; }
+.proj-group.pinned .nav-row { padding-left: 0; }
+.nav.proj { height: 32px; min-height: 32px; font-size: 14px; gap: 10px; padding: 0 8px 0 10px; border-radius: 12px; }
+.nav.proj span:not(.n) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav.proj .pdot { width: 7px; height: 7px; margin: 0; }
+.nav.proj .n { font-size: 11.5px; }
+.side-mid .nav-row .nav-caret { width: 26px; height: 26px; }
+.caret-gap { width: 26px; flex: none; }
+.mid-empty { margin: 8px 4px 0; padding: 12px; border-radius: 14px; border: 1.5px dashed var(--sky-200); color: var(--muted); font-size: 13px; text-align: left; line-height: 1.45; }
+.mid-empty:hover { border-color: var(--sky-500); color: var(--ink); }
+.mid-dom { display: flex; align-items: center; gap: 10px; height: 30px; margin-top: 8px; padding: 0 10px; border-radius: 12px; color: var(--faint); font-size: 13px; }
+.mid-dom:hover { background: var(--sky-100); color: var(--ink); }
+
+.side-foot { gap: 4px; padding-top: 8px; }
+.side-foot .nav { height: 34px; min-height: 34px; font-size: 14px; }
+.acct { position: relative; }
+.acct-btn { width: 100%; display: flex; align-items: center; gap: 10px; padding: 6px 10px 6px 6px; border-radius: 16px; text-align: left; color: var(--muted); transition: background-color 0.15s; }
+.acct-btn:hover, .acct-btn.on { background: var(--cloud); box-shadow: var(--shadow-sm), 0 0 0 1px var(--sky-200); }
+.acct-btn > svg { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.avatar { width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(135deg, var(--sky-200), var(--sky-300)); color: #142133; font-weight: 600; font-size: 14px; }
+.acct-who { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.acct-who b { font-size: 14px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-who small { font-size: 11.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-pop { position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); z-index: 30; display: flex; flex-direction: column; gap: 1px; padding: 6px; border-radius: 18px; border: 1.5px solid transparent;
+  background: linear-gradient(var(--cloud), var(--cloud)) padding-box, linear-gradient(160deg, var(--cloud) 0%, var(--sky-200) 55%, var(--line) 100%) border-box;
+  box-shadow: var(--shadow-lg); animation: qa-in 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+.acct-pop .nav { height: 36px; min-height: 36px; font-size: 14px; }
+@media (max-height: 720px) {
+  .side-top .nav { height: 30px; min-height: 30px; }
+  .nav-sep { margin: 3px 10px; }
+  .side-top .brand { padding-bottom: 2px; }
+}
+.nav-mini { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.nav-mini button { position: relative; display: flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 4px; border-radius: 12px; font-size: 12.5px; color: var(--muted); transition: background-color 0.15s, color 0.15s; }
+.nav-mini button svg { width: 15px; height: 15px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.nav-mini button:hover { background: color-mix(in oklab, var(--sky-100) 60%, transparent); color: var(--ink); }
+.nav-mini button.on { background: var(--cloud); color: var(--sky-700); font-weight: 600; box-shadow: var(--shadow-sm), 0 0 0 1px var(--sky-200); }
+.nav-mini button.due::after { content: ''; position: absolute; top: 6px; right: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
