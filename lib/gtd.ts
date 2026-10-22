@@ -1,4 +1,4 @@
-import type { Data, Item, Project, Status, Priority, Recurrence, Horizon, ProjectStatus, Settings } from './types';
+import type { Data, Item, Project, ProjectLink, Status, Priority, Recurrence, Horizon, ProjectStatus, Settings } from './types';
 import { diffDays, todayIso, addDays, matchesRule, DAYS } from './dates';
 
 export const COLORS = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'c9', 'c10', 'c11', 'c12'];
@@ -224,3 +224,25 @@ export const hostOf = (url: string) => {
     return url;
   }
 };
+
+/* Contexte @ deviné d'après le verbe, quand l'IA n'en a pas donné (ou pour une tâche créée à la main). */
+const CTX_RULES: [string, RegExp][] = [
+  ['@telephone', /\b(appel|appeler|rappeler|telephon|sms|whatsapp|texto|joindre)/],
+  ['@dehors', /\b(acheter|courses|pharmacie|poste|deposer|recuperer|retirer|aller|passer (a|au|chez)|magasin|boulangerie|supermarche|pressing|garage)/],
+  ['@maison', /\b(menage|ranger|nettoyer|aspirateur|lessive|linge|repasser|cuisiner|vaisselle|bricoler|reparer|jardin|arroser|trier)/],
+  ['@bureau', /\b(imprimer|photocopier|au bureau|collegue)/],
+  ['@ordi', /\b(mail|email|e-mail|ecrire|rediger|envoyer|reserver|commander|payer|virement|chercher|rechercher|remplir|formulaire|inscri|en ligne|site|coder|mettre a jour|repondre|demarche|declarer|prendre (un )?(rdv|rendez-vous)|relire|preparer)/],
+];
+export function guessContext(title: string, s: Settings): string | null {
+  const allowed = new Set(contextsOf(s).map(([k]) => k));
+  const t = ` ${title.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')} `;
+  const hit = CTX_RULES.find(([k, re]) => allowed.has(k) && re.test(t));
+  return hit ? hit[0] : null;
+}
+
+/** Liens d'action d'un élément, sans doublons. */
+export function mergeLinks(a: ProjectLink[] | null | undefined, b: ProjectLink[] | null | undefined): ProjectLink[] {
+  const out: ProjectLink[] = [];
+  [...(a || []), ...(b || [])].forEach((l) => l?.url && !out.some((o) => o.url === l.url) && out.push({ label: l.label || hostOf(l.url), url: l.url }));
+  return out;
+}

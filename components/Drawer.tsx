@@ -62,6 +62,60 @@ function ProjectSelect({ value, onChange, id }: { value?: string | null; onChang
   );
 }
 
+/** Liens pour passer à l'action : trouvés par l'IA ou ajoutés à la main. */
+function ActionLinks({ it }: { it: Item }) {
+  const store = useStore();
+  const { ui, findLinks } = useUI();
+  const [url, setUrl] = useState('');
+  const links = it.links || [];
+  const busy = !!ui.linking[it.id];
+  const add = () => {
+    const u = url.trim();
+    if (!u) return;
+    const full = /^https?:\/\//i.test(u) ? u : `https://${u}`;
+    store.updateItem(it.id, { links: [...links.filter((l) => l.url !== full), { label: hostOf(full), url: full }] });
+    setUrl('');
+  };
+  return (
+    <div className="fld">
+      <span>Pour agir</span>
+      {links.length > 0 && (
+        <div className="act-links">
+          {links.map((l) => (
+            <div key={l.url} className="act-link">
+              <a href={l.url} target="_blank" rel="noopener noreferrer">
+                <Icon name="link" />
+                <span>
+                  <b>{l.label}</b>
+                  <small>{hostOf(l.url)}</small>
+                </span>
+              </a>
+              <button className="icon-btn sm" onClick={() => store.updateItem(it.id, { links: links.filter((x) => x.url !== l.url) })} aria-label={`Retirer ${l.label}`} title="Retirer">
+                <Icon name="x" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="act-add">
+        <input className="inp" value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), add())} placeholder="Colle un lien (réservation, formulaire…)" aria-label="Ajouter un lien" />
+        {url.trim() ? (
+          <button className="btn sm" onClick={add}>
+            Ajouter
+          </button>
+        ) : (
+          !ui.aiOff && (
+            <button className="btn sm" disabled={busy} onClick={() => findLinks(it.id)} title="L'IA cherche sur le web la page pour réserver, s'inscrire ou faire la démarche">
+              {busy ? <i className="spin" /> : <Icon name="sparkle" />}
+              {busy ? 'Recherche…' : 'Trouver le lien'}
+            </button>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ItemDrawer({ id }: { id: string }) {
   const store = useStore();
   const { ui, closeDrawer, aiSort, removeItem } = useUI();
@@ -139,6 +193,7 @@ function ItemDrawer({ id }: { id: string }) {
             </div>
           </div>
         )}
+        {it.status !== 'done' && <ActionLinks it={it} />}
         <div className="row2">
           <label className="fld">
             <span>Date</span>

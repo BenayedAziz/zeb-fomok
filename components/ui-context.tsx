@@ -2,8 +2,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import type { AiItem, Data, Item } from '@/lib/types';
-import { PR, REC, ST, contextsOf, domainsSorted, freeColor, projectsSorted, recLabel } from '@/lib/gtd';
-import { isDate, isTime, nextOccurrence, relDate, todayIso } from '@/lib/dates';
+import { PR, REC, ST, contextsOf, domainsSorted, freeColor, guessContext, mergeLinks, projectsSorted, recLabel } from '@/lib/gtd';
+import { isDate, isTime, nextOccurrence, pad, relDate, todayIso } from '@/lib/dates';
 
 export type View =
   | 'day' | 'inbox' | 'next' | 'waiting' | 'someday' | 'projects' | 'project' | 'pins'
@@ -41,6 +41,8 @@ interface UI {
   pending: Record<string, boolean>;
   /** Cochés à l'instant : déclenche l'animation, puis s'efface. */
   justDone: Record<string, boolean>;
+  /** L'IA cherche un lien pour passer à l'action. */
+  linking: Record<string, boolean>;
   aiOff: boolean;
   importSource: string | null;
 }
@@ -58,6 +60,8 @@ interface UIApi {
   aiSort: (id: string) => Promise<void>;
   /** Ajout direct dans l'agenda : l'IA choisit seulement le projet et le domaine, sans toucher au reste. */
   fileWithAi: (id: string) => Promise<void>;
+  /** Cherche sur le web le lien qui permet d'agir (réserver, s'inscrire…) et l'ajoute à l'élément. */
+  findLinks: (id: string, query?: string) => Promise<void>;
   toggleDone: (id: string) => void;
   schedule: (id: string, date: string | null, time?: string | null) => void;
   removeItem: (id: string) => void;
@@ -71,8 +75,11 @@ export const useUI = () => {
 };
 
 export function aiContext(d: Data) {
+  const now = new Date();
   return {
     today: todayIso(),
+    now: `${pad(now.getHours())}:${pad(now.getMinutes())}`,
+    city: d.settings.city?.trim() || undefined,
     contexts: contextsOf(d.settings).map(([k]) => k),
     domains: domainsSorted(d).map((x) => ({ id: x.id, name: x.name })),
     projects: projectsSorted(d)
@@ -98,6 +105,13 @@ function itemFromAi(d: Data, r: AiItem): Partial<Item> {
   if (r.domainId && d.domains[r.domainId]) p.domainId = r.domainId;
   if (p.projectId && !p.domainId) p.domainId = d.projects[p.projectId]?.domainId || null;
   if (p.kind === 'task' && r.context && ctxs.has(r.context)) p.context = r.context;
+  // Pas de contexte renvoyé : on le devine d'après le verbe (« Appeler » → @téléphone).
+  if (p.kind === 'task' && !p.context && d.settings.showContexts) p.context = guessContext(p.title || '', d.settings);
+  const links = mergeLinks(
+    Array.isArray(r.links) ? r.links.filter((l) => typeof l?.url === 'string' && /^https:\/\//.test(l.url)).map((l) => ({ label: String(l.label || ''), url: l.url! })) : [],
+    [],
+  );
+  if (links.length) p.links = links.slice(0, 4);
   if (p.kind === 'task' && r.priority && PR[r.priority]) p.priority = r.priority as Item['priority'];
   if (isDate(r.date)) p.date = r.date;
   if (isTime(r.time) && p.date) p.time = r.time;
@@ -165,6 +179,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     plan: null,
     pending: {},
     justDone: {},
+    linking: {},
     aiOff: false,
     importSource: null,
   }));
@@ -178,6 +193,44 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     timer.current = setTimeout(() => setToast(null), t.actions?.length ? 6500 : 3000);
   }, []);
   const dismissToast = useCallback(() => setToast(null), []);
+
+  const findLinks = useCallback(
+    async (id: string, query?: string) => {
+      const s = storeRef.current;
+      const it = s.get().items[id];
+      if (!it) return;
+      setUi((u) => ({ ...u, linking: { ...u.linking, [id]: true } }));
+      try {
+        const res = await fetch('/api/links', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: it.title, query: query || it.title, city: s.get().settings.city?.trim() || undefined }),
+        });
+        const body = await res.json().catch(() => ({}));
+        const found = Array.isArray(body.links) ? body.links.filter((l: { url?: unknown }) => typeof l?.url === 'string') : [];
+        const cur = s.get().items[id];
+        if (!cur) return;
+        if (!found.length) {
+          if (!query) toast({ text: res.ok ? "Pas de lien fiable trouvé. Ajoute-le à la main dans les notes." : "La recherche de liens n'a pas marché. Réessaie plus tard." });
+          return;
+        }
+        // Les liens trouvés sur le web passent avant le plan.
+        s.updateItem(id, { links: mergeLinks(found, cur.links).slice(0, 5) });
+        toast({ text: `Lien trouvé : ${found[0].label}`, actions: [{ label: 'Ouvrir', run: () => window.open(found[0].url, '_blank', 'noopener') }] });
+      } catch {
+        /* hors ligne : pas de lien, pas grave */
+      } finally {
+        setUi((u) => {
+          const linking = { ...u.linking };
+          delete linking[id];
+          return { ...u, linking };
+        });
+      }
+    },
+    [toast],
+  );
+  const findLinksRef = useRef(findLinks);
+  findLinksRef.current = findLinks;
 
   const go = useCallback((view: View, extra?: { projectId?: string; domain?: string | null }) => {
     setUi((u) => ({
@@ -211,6 +264,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       const newProjects: Record<string, string> = {};
       const chips: string[] = [];
       let placeholderUsed = false;
+      const lookups: [string, string][] = [];
 
       results.forEach((r) => {
         if (r.kind === 'pin') {
@@ -265,11 +319,14 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
           id = s.addItem({ ...p, raw: raw0, title: p.title || 'Sans titre' }).id;
           created.push({ coll: 'items', id });
         }
+        if (typeof r.lookup === 'string' && r.lookup.trim() && lookups.length < 3) lookups.push([id, r.lookup.trim()]);
         const it = s.get().items[id];
         const proj = it?.projectId ? s.get().projects[it.projectId]?.name : null;
         const when = it?.date ? `${relDate(it.date)}${it.time ? ` ${it.time}` : ''}` : '';
         chips.push([it?.kind === 'event' ? 'Événement' : ST[it?.status || 'todo'], proj, when, it?.recurrence ? recLabel(it) : ''].filter(Boolean).join(' · '));
       });
+      // Liens pour agir : cherchés sur le web en arrière-plan, ils s'ajoutent à la carte quand ils arrivent.
+      lookups.forEach(([lid, q]) => void findLinksRef.current(lid, q));
       // Si l'IA n'a renvoyé que des épingles, l'élément de départ n'a plus de raison d'être.
       if (!placeholderUsed) s.removeItem(placeholderId, { forget: true });
 
@@ -287,7 +344,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
               created.forEach((c) => (c.coll === 'items' ? s.removeItem(c.id, { forget: true }) : c.coll === 'pins' ? s.removePin(c.id, { forget: true }) : s.removeProject(c.id)));
               if (placeholderUsed) {
                 const raw0 = s.get().items[placeholderId]?.raw;
-                s.updateItem(placeholderId, { status: 'inbox', kind: 'task', title: raw0 || s.get().items[placeholderId]?.title, projectId: null, date: null, time: null, duration: null, recurrence: null, recurrenceDays: null, recurrenceInterval: null, aiSorted: false });
+                s.updateItem(placeholderId, { status: 'inbox', kind: 'task', title: raw0 || s.get().items[placeholderId]?.title, projectId: null, domainId: null, context: null, links: null, quick: false, date: null, time: null, duration: null, recurrence: null, recurrenceDays: null, recurrenceInterval: null, aiSorted: false });
               }
             },
           },
@@ -353,8 +410,15 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
         const result = body.result || {};
         const r: AiItem | undefined = (Array.isArray(result.items) ? result.items : [result])[0];
         const cur = s.get().items[id];
-        if (!r || !cur || cur.projectId) return;
+        if (!r || !cur) return;
         const p = itemFromAi(s.get(), r);
+        // Créé à la main : on garde titre, date et heure, on complète le contexte @ et les liens.
+        const extra: Partial<Item> = {};
+        if ((cur.kind || 'task') === 'task' && !cur.context && p.context) extra.context = p.context;
+        if (p.links?.length && !cur.links?.length) extra.links = p.links;
+        if (Object.keys(extra).length) s.updateItem(id, extra);
+        if (typeof r.lookup === 'string' && r.lookup.trim()) void findLinksRef.current(id, r.lookup.trim());
+        if (cur.projectId) return;
         let projectId = p.projectId || null;
         let created = '';
         const np = r.newProject;
@@ -509,11 +573,12 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       capture,
       aiSort,
       fileWithAi,
+      findLinks,
       toggleDone,
       schedule,
       removeItem,
     }),
-    [ui, set, go, toast, toastState, dismissToast, capture, aiSort, fileWithAi, toggleDone, schedule, removeItem],
+    [ui, set, go, toast, toastState, dismissToast, capture, aiSort, fileWithAi, findLinks, toggleDone, schedule, removeItem],
   );
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
 }

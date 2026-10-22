@@ -141,6 +141,21 @@ export function Card({ it, o = {} }: { it: Item; o?: CardOpts }) {
             </span>
           )}
         </div>
+        {!done && !o.ghost && !o.compact && (it.links?.length || ui.linking[it.id]) ? (
+          <div className="card-links">
+            {(it.links || []).slice(0, 3).map((l) => (
+              <a key={l.url} className="chip link" href={l.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} title={l.url} draggable={false}>
+                <Icon name="link" />
+                <span>{l.label}</span>
+              </a>
+            ))}
+            {ui.linking[it.id] && (
+              <span className="chip link wait">
+                <i className="spin" /> Cherche un lien…
+              </span>
+            )}
+          </div>
+        ) : null}
       </div>
       {mascot && <img className="mascot" src={mascot.src} alt="" title={mascot.name} width={64} height={64} loading="lazy" draggable={false} />}
       {!o.compact && !o.ghost && it.status !== 'done' && (

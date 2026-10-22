@@ -7,7 +7,7 @@ import { Card, GroupedByProject } from '../Card';
 import { Icon } from '../icons';
 import { mascotFor } from '@/lib/mascots';
 import {
-  backlog, colorOfItem, colorOfProject, contextsOf, counts, goalsSorted, isEvent, list, overdue, projectsSorted, reviewDue, lastReviewDays, entriesOn, type Entry,
+  backlog, guessContext, colorOfItem, colorOfProject, contextsOf, counts, goalsSorted, isEvent, list, overdue, projectsSorted, reviewDue, lastReviewDays, entriesOn, type Entry,
 } from '@/lib/gtd';
 import { DAYS, DSHORT, MONTHS, MSHORT, addDays, isoOf, isoWeek, minutesOf, mondayOf, pad, parseIso, relDate, timeOf, timeRange, todayIso } from '@/lib/dates';
 
@@ -384,7 +384,7 @@ function QuickAdd({ date, start, end, anchor, onClose }: { date: string; start: 
   const add = () => {
     const t = title.trim();
     if (!t) return;
-    const it = store.addItem({ title: t, raw: t, kind, status: 'todo', date, time: timeOf(start), duration: end - start });
+    const it = store.addItem({ title: t, raw: t, kind, status: 'todo', date, time: timeOf(start), duration: end - start, context: kind === 'task' && store.data.settings.showContexts ? guessContext(t, store.data.settings) : null });
     onClose();
     toast({ text: `${kind === 'event' ? 'Événement' : 'Tâche'} ajouté ${relDate(date).toLowerCase()} à ${timeOf(start)}` });
     void fileWithAi(it.id); // l'IA le range dans le bon projet, en arrière-plan
@@ -541,58 +541,95 @@ const projFilter = (pid: string | null) => (pid ? (it: Item) => it.projectId ===
 function DayView() {
   const { data } = useStore();
   const { ui } = useUI();
+  const narrow = useNarrow(1100);
   const d = ui.date;
   const isToday = d === todayIso();
   const entries = entriesOn(data, d, projFilter(ui.calProject));
-  const untimed = entries.filter((e) => !e.it.time && !isEvent(e.it) && !e.ghost).map((e) => e.it);
+  // Au centre : les tâches du jour sans heure, les plus rapides d'abord, les faites en bas. Le reste vit dans l'agenda.
+  const tasks = entries
+    .filter((e) => !e.it.time && !isEvent(e.it) && !e.ghost)
+    .map((e) => e.it)
+    .sort((a, b) => Number(a.status === 'done') - Number(b.status === 'done') || Number(!!b.quick) - Number(!!a.quick));
+  const doneN = entries.filter((e) => !e.ghost && e.it.status === 'done').length;
+  const totalN = entries.filter((e) => !e.ghost).length;
   const dd = parseIso(d);
+  const dateLabel = `${DAYS[dd.getDay()]} ${dd.getDate()} ${MONTHS[dd.getMonth()]}`;
+  const agenda = (
+    <aside className="agenda-panel" aria-label="Agenda">
+      <div className="ap-head">
+        <h2>Agenda</h2>
+        <span className="hint">Glisse pour ajouter</span>
+      </div>
+      <AllDay entries={entries} />
+      <AgendaScroll>
+        <Timeline date={d} entries={entries} showHours nowLine />
+      </AgendaScroll>
+    </aside>
+  );
   return (
     <>
-      <Head
-        eyebrow={`${isToday ? 'Ma journée' : 'Journée'} · semaine ${isoWeek(d)}`}
-        title={
-          isToday ? (
-            <>
-              <em>{DAYS[dd.getDay()]}</em> {dd.getDate()} {MONTHS[dd.getMonth()]}
-            </>
-          ) : (
-            `${DAYS[dd.getDay()]} ${dd.getDate()} ${MONTHS[dd.getMonth()]}`
-          )
-        }
-        actions={<CalNav />}
-      />
+      <header className="vh day-head">
+        <div>
+          <div className="day-date">
+            {dateLabel.charAt(0).toUpperCase() + dateLabel.slice(1)} · semaine {isoWeek(d)}
+          </div>
+          <h1>{isToday ? 'Ma journée' : d < todayIso() ? 'Journée passée' : 'Journée à venir'}</h1>
+        </div>
+        <div className="vh-actions">
+          <CalNav />
+        </div>
+      </header>
       <Compass />
       <ProjectLegend />
-      <div className="day-grid">
-        <div className="stack">
-          {isToday && (
-            <div className="sec">
-              <Alerts />
+      <div className="today-grid">
+        <div className="stack today-main">
+          {isToday && <Alerts />}
+          {totalN > 0 && (
+            <div className="day-progress" aria-label={`${doneN} sur ${totalN} terminés`}>
+              <div className="dp-bar">
+                <i style={{ width: `${Math.round((doneN / totalN) * 100)}%` }} />
+              </div>
+              <span>
+                {doneN === totalN ? 'Tout est fait, bravo !' : `${doneN} sur ${totalN} terminé${doneN > 1 ? 's' : ''}`}
+              </span>
             </div>
           )}
-          <AllDay entries={entries} />
           <div className="sec" data-drop="date" data-date={d}>
-            <div className="sec-head">
-              <h2>
-                {isToday ? "À faire aujourd'hui" : 'À faire ce jour-là'} <span className="n">{untimed.length}</span>
-              </h2>
-              <span className="hint">Rangé par projet</span>
-            </div>
-            <GroupedByProject items={untimed} o={{ noDate: true }} empty={<div className="drop-hint">Glisse ici une action pour la faire {isToday ? "aujourd'hui" : 'ce jour-là'}, sans horaire précis.</div>} />
+            {tasks.length ? (
+              <div className="cards">
+                {tasks.map((i) => (
+                  <Card key={i.id} it={i} o={{ noDate: true }} />
+                ))}
+              </div>
+            ) : (
+              <div className="drop-hint">
+                Rien de prévu sans horaire {isToday ? "aujourd'hui" : 'ce jour-là'}. Glisse ici une action depuis « À planifier », ou capture-la en haut.
+              </div>
+            )}
           </div>
-          <div className="sec">
-            <div className="sec-head">
-              <h2>Agenda</h2>
-              <span className="hint">Glisse une carte sur l&apos;agenda, étire un bloc pour changer sa durée, clique un créneau pour ajouter</span>
-            </div>
-            <div className="timeline-card">
-              <Timeline date={d} entries={entries} showHours nowLine />
-            </div>
-          </div>
+          {narrow && agenda}
+          <PlanPanel flat />
         </div>
-        <PlanPanel />
+        {!narrow && agenda}
       </div>
     </>
+  );
+}
+
+/** Zone de l'agenda qui défile, placée d'emblée sur l'heure actuelle. */
+function AgendaScroll({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { data } = useStore();
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const h = new Date().getHours();
+    el.scrollTop = Math.max(0, (h - data.settings.dayStart - 1) * HOUR_PX);
+  }, [data.settings.dayStart]);
+  return (
+    <div className="ap-scroll" ref={ref}>
+      {children}
+    </div>
   );
 }
 
