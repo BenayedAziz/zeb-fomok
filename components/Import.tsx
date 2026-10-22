@@ -5,6 +5,7 @@ import type { Item } from '@/lib/types';
 import { aiContext, useUI } from './ui-context';
 import { COLORS, PR, ST, contextsOf } from '@/lib/gtd';
 import { isDate, isTime, relDate } from '@/lib/dates';
+import { ACCEPT_ATTR, readFiles } from '@/lib/importFiles';
 
 interface PropProject { key: string; name: string; existingId?: string | null; domainId?: string | null; outcome?: string | null; description?: string | null }
 interface PropItem { title: string; project?: string | null; status?: string; date?: string | null; time?: string | null; priority?: string | null; context?: string | null; waitingFor?: string | null; reason?: string }
@@ -14,6 +15,18 @@ const SOURCES: { k: string; name: string; text: string; oauth?: boolean }[] = [
   { k: 'notion', name: 'Notion', text: 'Tes pages et bases récentes : projets, tâches, notes.', oauth: true },
   { k: 'google', name: 'Gmail et Google Agenda', text: 'Les mails des 30 derniers jours et tes rendez-vous des 60 prochains.', oauth: true },
   { k: 'microsoft', name: 'Outlook', text: 'Mails et calendrier Outlook. Les comptes pro peuvent être bloqués par ton entreprise.', oauth: true },
+];
+
+/* Comment exporter depuis chaque outil (chemins des menus à jour en 2026). */
+const HOWTO: [string, string[]][] = [
+  ['Notion', ['Ouvre la page qui contient tes projets (ou ton espace).', 'Clique sur ••• en haut à droite, puis « Exporter ».', 'Choisis « Markdown & CSV » et coche « Inclure les sous-pages ».', 'Tu reçois un fichier .zip : dépose-le ici tel quel.']],
+  ['Todoist', ['Ouvre un projet.', 'Clique sur ••• en haut à droite, puis « Exporter en modèle » ou « Exporter en CSV ».', 'Dépose le fichier .csv ici. Recommence pour chaque projet.']],
+  ['Trello', ['Ouvre ton tableau.', 'Menu ••• du tableau, puis « Imprimer, exporter et partager », puis « Exporter en JSON ».', 'Enregistre la page qui s’ouvre (Cmd+S ou Ctrl+S) et dépose le fichier .json ici.']],
+  ['TickTick', ['Réglages, puis « Compte » et « Sauvegarde ».', '« Générer une sauvegarde » : tu obtiens un fichier .csv.', 'Dépose-le ici.']],
+  ['Asana, ClickUp, Monday, Excel, Google Sheets', ['Dans ton projet ou ta liste, cherche « Exporter » et choisis le format CSV.', 'Dans Excel ou Google Sheets : Fichier, puis Télécharger ou Enregistrer sous, format CSV.', 'Dépose le fichier .csv ici.']],
+  ['Google Agenda', ['Sur ordinateur : roue dentée, Paramètres, puis « Importer et exporter », puis « Exporter ».', 'Tu reçois un .zip avec tes agendas : dépose-le ici.', 'Ou, pour un seul agenda : Paramètres de l’agenda, « Adresse secrète au format iCal », et colle-la dans « Un calendrier par lien ».']],
+  ['Outlook et calendrier iPhone', ['Outlook.com : Paramètres, Calendrier, « Calendriers partagés », « Publier un calendrier », puis copie le lien ICS.', 'iPhone : app Calendrier, « Calendriers », (i) à côté de l’agenda, « Calendrier public », puis « Partager le lien ».', 'Colle le lien dans « Un calendrier par lien ».']],
+  ['Apple Rappels, Notes, Google Keep, Things', ['Ouvre ta liste ou ta note, sélectionne tout et copie.', 'Colle le texte dans « Coller du texte ».']],
 ];
 
 const ERRORS: Record<string, string> = {
@@ -35,6 +48,7 @@ export function ImportPanel({ onDone, autoSource }: { onDone?: () => void; autoS
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [ics, setIcs] = useState('');
+  const [drag, setDrag] = useState(false);
   const [text, setText] = useState('');
   const [props, setProps] = useState<{ source: string; data: Proposals } | null>(null);
   const [offP, setOffP] = useState<Record<string, boolean>>({});
@@ -47,7 +61,7 @@ export function ImportPanel({ onDone, autoSource }: { onDone?: () => void; autoS
       .catch(() => {});
   }, []);
 
-  const run = async (source: string, extra: { url?: string; text?: string } = {}) => {
+  const run = async (source: string, extra: { url?: string; text?: string; ics?: string[]; names?: string[] } = {}) => {
     setBusy(source);
     setErr(null);
     try {
@@ -117,7 +131,7 @@ export function ImportPanel({ onDone, autoSource }: { onDone?: () => void; autoS
           context: i.context && contextsOf(store.get().settings).some(([k]) => k === i.context) ? i.context : null,
           waitingFor: status === 'waiting' ? i.waitingFor || null : null,
           aiSorted: true,
-          aiReason: `Importé depuis ${props.source === 'google' ? 'Gmail / Google Agenda' : props.source === 'microsoft' ? 'Outlook' : props.source === 'ics' ? 'ton calendrier' : props.source === 'notion' ? 'Notion' : 'ton texte'}${i.reason ? ` : ${i.reason}` : '.'}`,
+          aiReason: `Importé depuis ${props.source === 'google' ? 'Gmail / Google Agenda' : props.source === 'microsoft' ? 'Outlook' : props.source === 'ics' ? 'ton calendrier' : props.source === 'notion' ? 'Notion' : props.source === 'file' ? 'tes fichiers' : 'ton texte'}${i.reason ? ` : ${i.reason}` : '.'}`,
         };
       });
     store.bulk({ projects: newProjects, items: newItems });
@@ -200,33 +214,90 @@ export function ImportPanel({ onDone, autoSource }: { onDone?: () => void; autoS
     );
   }
 
+  const onFiles = async (list: FileList | File[] | null) => {
+    const files = Array.from(list || []);
+    if (!files.length || busy) return;
+    setErr(null);
+    const r = await readFiles(files);
+    if (!r.text.trim() && !r.ics.length) {
+      setErr(r.skipped.length ? `Format non lu : ${r.skipped.slice(0, 3).join(', ')}. Exporte en CSV, Markdown, JSON ou .ics.` : ERRORS.empty);
+      return;
+    }
+    run('file', { text: r.text, ics: r.ics, names: r.names });
+  };
+
   return (
     <div className="stack">
       {err && <div className="alert crit">{err}</div>}
       {busy && (
         <div className="alert info">
           <span>
-            <i className="spin" /> L&apos;IA lit {busy === 'text' ? 'ton texte' : busy === 'ics' ? 'ton calendrier' : 'tes données'} et prépare des propositions. Ça peut prendre une minute.
+            <i className="spin" /> L&apos;IA lit {busy === 'text' ? 'ton texte' : busy === 'ics' ? 'ton calendrier' : busy === 'file' ? 'tes fichiers' : 'tes données'} et prépare des propositions. Ça peut prendre une minute.
           </span>
         </div>
       )}
+
+      <div className="sec">
+        <div className="sec-head">
+          <h2>Connexion directe</h2>
+        </div>
+        <div className="tools">
+          {SOURCES.map((s) => {
+            const ready = status[s.k];
+            return (
+              <div className="tool" key={s.k}>
+                <b>{s.name}</b>
+                <p>{s.text}</p>
+                {ready ? (
+                  <a className="btn primary" href={`/api/connect/${s.k}`} aria-disabled={!!busy} onClick={(e) => busy && e.preventDefault()}>
+                    Connecter
+                  </a>
+                ) : (
+                  <span className="hint">Bientôt en un clic. En attendant, utilise l&apos;export juste en dessous.</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="sec">
+        <div className="sec-head">
+          <h2>Dépose tes exports</h2>
+        </div>
+        <label
+          className={`dropzone${drag ? ' over' : ''}`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDrag(true);
+          }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDrag(false);
+            void onFiles(e.dataTransfer.files);
+          }}
+        >
+          <input type="file" multiple accept={ACCEPT_ATTR} className="sr" disabled={!!busy} onChange={(e) => (void onFiles(e.target.files), (e.target.value = ''))} />
+          <img src="/mascots/colis.webp" alt="" width={72} height={72} />
+          <b>Glisse ici tes fichiers, ou clique pour les choisir</b>
+          <span className="hint">.zip de Notion, CSV de Todoist, TickTick, Asana ou Excel, JSON de Trello, calendrier .ics, notes .md ou .txt. Tes fichiers restent sur ton appareil : seul le texte utile est lu par l&apos;IA.</span>
+        </label>
+        <div className="howto">
+          {HOWTO.map(([name, steps]) => (
+            <details key={name}>
+              <summary>{name}</summary>
+              <ol>
+                {steps.map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ol>
+            </details>
+          ))}
+        </div>
+      </div>
+
       <div className="tools">
-        {SOURCES.map((s) => {
-          const ready = status[s.k];
-          return (
-            <div className="tool" key={s.k}>
-              <b>{s.name}</b>
-              <p>{s.text}</p>
-              {ready ? (
-                <a className="btn primary" href={`/api/connect/${s.k}`} aria-disabled={!!busy} onClick={(e) => busy && e.preventDefault()}>
-                  Connecter
-                </a>
-              ) : (
-                <span className="chip tag">Bientôt disponible</span>
-              )}
-            </div>
-          );
-        })}
         <div className="tool">
           <b>Un calendrier par lien</b>
           <p>Google, Outlook et iPhone donnent un lien d&apos;abonnement (.ics). Colle-le ici.</p>
@@ -235,18 +306,16 @@ export function ImportPanel({ onDone, autoSource }: { onDone?: () => void; autoS
             Importer le calendrier
           </button>
         </div>
-      </div>
-      <div className="tool">
-        <b>Coller du texte</b>
-        <p>Un export Notion, une liste de tâches, tes notes, un mail : l&apos;IA en tire tes projets et tes actions.</p>
-        <textarea className="inp" rows={6} value={text} onChange={(e) => setText(e.target.value)} placeholder="Colle ici…" aria-label="Texte à importer" />
-        <div>
+        <div className="tool">
+          <b>Coller du texte</b>
+          <p>Apple Rappels, Notes, Google Keep, Things, un mail : sélectionne tout, copie, colle.</p>
+          <textarea className="inp" rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder="Colle ici…" aria-label="Texte à importer" />
           <button className="btn" disabled={!text.trim() || !!busy} onClick={() => run('text', { text })}>
             Analyser le texte
           </button>
         </div>
       </div>
-      <p className="hint">Aucun accès n&apos;est enregistré : la connexion sert le temps de l&apos;import, puis elle est effacée. Tu valides tout avant que ce soit ajouté.</p>
+      <p className="hint">Aucun accès n&apos;est enregistré : une connexion sert le temps de l&apos;import, puis elle est effacée. Tu valides tout avant que ce soit ajouté.</p>
     </div>
   );
 }

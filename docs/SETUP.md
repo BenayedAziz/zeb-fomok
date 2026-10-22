@@ -19,7 +19,7 @@ Règle d'or : **les clés ne se collent jamais dans le code ni dans un chat**. E
 4. **Authentication > Sign In / Providers** : vérifie que **Email** est activé.
 5. **Authentication > URL Configuration** (à faire après l'étape 3, quand tu as l'adresse Vercel) :
    - Site URL : `https://ton-site.vercel.app`
-   - Redirect URLs : ajoute `https://ton-site.vercel.app/auth/callback`
+   - Redirect URLs : ajoute `https://zeb-fomok.vercel.app/auth/callback`
 
 > Supabase envoie les emails de connexion avec un petit quota gratuit (quelques emails par heure). Pour 4 personnes ça suffit ; plus tard, branche un vrai service d'emails (Resend, Brevo) dans Authentication > SMTP.
 
@@ -73,14 +73,20 @@ Ta version actuelle (la page claude.ai) contient déjà tes domaines, projets, o
 
 ## 5. Connexions aux outils (facultatif, une par une)
 
-Sans ces étapes, l'import marche déjà avec **un calendrier par lien** et **du texte collé**. Les cartes Notion, Google et Outlook affichent « Bientôt disponible » tant que leurs variables ne sont pas remplies.
+Sans ces étapes, l'import marche déjà avec **les fichiers d'export** (zip Notion, CSV Todoist, TickTick, Asana, JSON Trello, .ics), **un calendrier par lien** et **du texte collé**. Les cartes Notion, Google et Outlook proposent l'export tant que leurs variables ne sont pas remplies.
+
+Avant tout, dans Vercel > Settings > Environment Variables :
+- `NEXT_PUBLIC_SITE_URL` = `https://zeb-fomok.vercel.app`
+- `IMPORT_SECRET` = une longue phrase au hasard (elle chiffre la connexion temporaire)
+
+Après avoir ajouté des variables, redéploie (Deployments > ••• > Redeploy) pour qu'elles soient prises en compte.
 
 Pour chaque outil, l'adresse de retour à déclarer est :
-`https://ton-site.vercel.app/api/connect/<outil>/callback` (`notion`, `google` ou `microsoft`).
+`https://zeb-fomok.vercel.app/api/connect/<outil>/callback` (`notion`, `google` ou `microsoft`).
 
 ### Notion
-1. notion.so/my-integrations > **New integration** > type **Public**.
-2. Redirect URI : `https://ton-site.vercel.app/api/connect/notion/callback`.
+1. notion.so/profile/integrations > **New integration** > type **Public** (Notion demande un site et une adresse de contact : mets `https://zeb-fomok.vercel.app` et ton email).
+2. Redirect URI : `https://zeb-fomok.vercel.app/api/connect/notion/callback`.
 3. Capacités : **Read content** uniquement.
 4. Copie `OAuth client ID` → `NOTION_CLIENT_ID` et `OAuth client secret` → `NOTION_CLIENT_SECRET` dans Vercel.
 5. Au moment de se connecter, chaque personne choisit les pages auxquelles l'appli a accès.
@@ -90,7 +96,7 @@ Pour chaque outil, l'adresse de retour à déclarer est :
 2. **APIs & Services > Library** : active **Gmail API** et **Google Calendar API**.
 3. **OAuth consent screen** : type **External**, statut **Testing**. Dans **Test users**, ajoute ton email et ceux de tes 3 amis (sinon Google refuse la connexion).
 4. Scopes : `gmail.readonly`, `calendar.readonly`, `openid`, `email`.
-5. **Credentials > Create credentials > OAuth client ID** > type **Web application**. Authorized redirect URI : `https://ton-site.vercel.app/api/connect/google/callback`.
+5. **Credentials > Create credentials > OAuth client ID** > type **Web application**. Authorized redirect URI : `https://zeb-fomok.vercel.app/api/connect/google/callback`.
 6. Copie l'ID et le secret → `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
 
 > En mode Testing, c'est limité à 100 testeurs déclarés et Google affiche un avertissement « appli non vérifiée » : normal. Pour ouvrir à tout le monde (abonnement), il faudra passer la vérification Google, longue pour Gmail (audit de sécurité). Le calendrier seul se vérifie plus facilement.
@@ -98,7 +104,7 @@ Pour chaque outil, l'adresse de retour à déclarer est :
 ### Outlook (Microsoft)
 1. portal.azure.com > **Microsoft Entra ID > App registrations > New registration**.
 2. Comptes pris en charge : **comptes de n'importe quel annuaire et comptes Microsoft personnels**.
-3. Redirect URI (Web) : `https://ton-site.vercel.app/api/connect/microsoft/callback`.
+3. Redirect URI (Web) : `https://zeb-fomok.vercel.app/api/connect/microsoft/callback`.
 4. **API permissions** > Microsoft Graph > Delegated : `User.Read`, `Mail.Read`, `Calendars.Read`.
 5. **Certificates & secrets** > New client secret.
 6. Copie `Application (client) ID` → `MICROSOFT_CLIENT_ID` et la valeur du secret → `MICROSOFT_CLIENT_SECRET`.
@@ -120,5 +126,5 @@ Pas de connexion directe possible. Dans l'app Calendrier sur icloud.com, partage
 
 - Connexion par email et mot de passe, création de compte avec email de confirmation, « Mot de passe oublié ».
 - Un compte créé avant (par lien) n'a pas de mot de passe connu : passer une fois par « Mot de passe oublié ».
-- Les liens envoyés par email (confirmation, mot de passe oublié) passent par `/auth/finish` en flux implicite : ils marchent même ouverts sur un autre appareil, sans toucher aux modèles d'email Supabase. Seule condition : `https://ton-site.vercel.app/**` dans Authentication > URL Configuration > Redirect URLs.
+- Les liens envoyés par email (confirmation, mot de passe oublié) passent par `/auth/finish` en flux implicite : ils marchent même ouverts sur un autre appareil, sans toucher aux modèles d'email Supabase. Seule condition : `https://zeb-fomok.vercel.app/**` dans Authentication > URL Configuration > Redirect URLs.
 - L'envoi d'emails intégré à Supabase est limité à quelques emails par heure : brancher un vrai fournisseur (Resend, Brevo) dans Authentication > SMTP avant d'inviter du monde.

@@ -132,6 +132,7 @@ function Sidebar() {
   return (
     <>
       <aside className="side" aria-label="Navigation">
+        <div className="side-top">
         <div className="brand">
           <span className="logo">
             <Logo />
@@ -163,6 +164,8 @@ function Sidebar() {
           <NavBtn view="review" label="Revue" icon="review" n={reviewDue(data) ? (lr === null ? '!' : `${lr} j`) : undefined} warn />
           <NavBtn view="journal" label="Journal" icon="done" />
         </div>
+        </div>
+        <div className="side-mid">
         {pinned.length > 0 && (
           <div className="nav-group">
             <div className="nav-label">Épinglés</div>
@@ -210,8 +213,9 @@ function Sidebar() {
             </>
           )}
         </div>
+        </div>
         <div className="side-foot">
-          <NavBtn view="import" label="Importer depuis mes outils" icon="import" />
+          <NavBtn view="import" label="Importer mes outils" icon="import" />
           {isAdmin(store.email) && <NavBtn view="feedback" label="Remarques des testeurs" icon="chat" />}
           <NavBtn view="trash" label="Corbeille" icon="trash" />
           <NavBtn view="settings" label="Réglages" icon="gear" />

@@ -2,16 +2,16 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { guardAi } from '@/lib/server/guard';
 import { ask, IMPORT_MODEL, IMPORT_SYSTEM, importPrompt, parseJson, type Ctx } from '@/lib/server/ai';
-import { PROVIDERS, readIcs, readProvider, tokenCookie, unseal, type Provider } from '@/lib/server/connectors';
+import { PROVIDERS, parseIcs, readIcs, readProvider, tokenCookie, unseal, type Provider } from '@/lib/server/connectors';
 
 export const maxDuration = 60;
 
-const LABEL: Record<string, string> = { notion: 'Notion', google: 'Gmail et Google Agenda', microsoft: 'Outlook', ics: 'Calendrier (lien)', text: 'Texte collé' };
+const LABEL: Record<string, string> = { notion: 'Notion', google: 'Gmail et Google Agenda', microsoft: 'Outlook', ics: 'Calendrier (lien)', text: 'Texte collé', file: 'Fichiers exportés' };
 
 export async function POST(req: Request) {
-  const body = (await req.json().catch(() => ({}))) as { source?: string; url?: string; text?: string; ctx?: Ctx };
+  const body = (await req.json().catch(() => ({}))) as { source?: string; url?: string; text?: string; ics?: string[]; names?: string[]; ctx?: Ctx };
   const source = body.source || '';
-  if (!body.ctx || !(['ics', 'text'].includes(source) || PROVIDERS.includes(source as Provider))) {
+  if (!body.ctx || !(['ics', 'text', 'file'].includes(source) || PROVIDERS.includes(source as Provider))) {
     return NextResponse.json({ error: 'bad_request' }, { status: 400 });
   }
   const g = await guardAi(3);
@@ -21,6 +21,12 @@ export async function POST(req: Request) {
   const store = await cookies();
   try {
     if (source === 'text') raw = (body.text || '').slice(0, 60000);
+    else if (source === 'file') {
+      // Fichiers lus dans le navigateur : du texte, et les calendriers .ics à décoder ici.
+      const cals = (Array.isArray(body.ics) ? body.ics : []).slice(0, 5).map((c, i) => parseIcs(String(c).slice(0, 400000), `Calendrier importé ${i + 1}`));
+      const names = Array.isArray(body.names) ? body.names.slice(0, 50).map(String).join(', ') : '';
+      raw = [names ? `Fichiers : ${names}` : '', (body.text || '').slice(0, 60000), ...cals].filter(Boolean).join('\n\n');
+    }
     else if (source === 'ics') raw = await readIcs(body.url || '');
     else {
       const sealed = store.get(tokenCookie(source as Provider))?.value;
