@@ -90,6 +90,22 @@ export function SettingsView() {
           </div>
         </div>
 
+        <div className="sec">
+          <div className="sec-head">
+            <h2>Ta ville</h2>
+          </div>
+          <label className="fld" style={{ maxWidth: 420 }}>
+            <span className="hint">L&apos;IA s&apos;en sert pour trouver les bons liens : le restaurant, la salle de sport ou le médecin près de chez toi.</span>
+            <input
+              className="inp"
+              defaultValue={s.city || ''}
+              placeholder="Ex. Paris 11e, Lyon, Montreuil"
+              onBlur={(e) => e.target.value.trim() !== (s.city || '') && (save({ city: e.target.value.trim() }), toast({ text: 'Ville enregistrée' }))}
+              autoComplete="address-level2"
+            />
+          </label>
+        </div>
+
         {s.showContexts && (
           <div className="sec">
             <div className="sec-head">

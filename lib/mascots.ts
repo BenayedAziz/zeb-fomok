@@ -34,7 +34,7 @@ const MASCOTS: Mascot[] = [
   M('jardin', 'Le Jardinier', 'maison', 'jardin, arroser, plante, plantes, potager'),
   M('sommeil', 'Le Dormeur', 'maison', 'dormir, sommeil, sieste, coucher'),
   M('eau', 'Le Nuage frais', 'sante', 'boire, hydratation, eau'),
-  M('repas', 'Le Gourmet', 'sante', 'dejeuner, repas, salade, nutrition, restaurant'),
+  M('repas', 'Le Gourmet', 'sante', 'dejeuner, diner, repas, salade, nutrition, restaurant, restau, resto, brunch, une table'),
   M('musique', 'Le Musicien', 'creatif', 'musique, guitare, piano, chanter'),
   M('photo', 'Le Photographe', 'creatif', 'photo, photographie, shooting'),
   M('ecriture', "L'Écrivain", 'creatif', 'ecrire, rediger, roman, article, newsletter'),
@@ -52,7 +52,7 @@ const MASCOTS: Mascot[] = [
   M('soiree', 'Le Sociable', 'maison', 'soiree, apero, fete'),
   M('facture', 'Le Comptable', 'travail', 'facture, payer, impot, impots, loyer'),
   M('epargne', "L'Économe", 'travail', 'epargne, economiser, budget, banque'),
-  M('papiers', "L'Archiviste", 'travail', 'papier, papiers, administratif, assurance, contrat'),
+  M('papiers', "L'Archiviste", 'travail', 'papier, papiers, administratif, assurance, contrat, titre de sejour, prefecture, passeport, carte d identite, demarche, caf, ameli'),
   M('reunion', 'Le Coéquipier', 'travail', 'reunion, point equipe, visio'),
   M('presentation', "L'Orateur", 'travail', 'presentation, demo, pitch, slides'),
   M('deadline', 'Le Chrono', 'travail', 'deadline, urgent, echeance'),
@@ -63,7 +63,7 @@ const MASCOTS: Mascot[] = [
   M('mascot-sport', 'Le Costaud', 'sport', 'sport, musculation, salle, jambes, halteres'),
   M('mascot-maison', 'Le Cocon', 'maison', 'maison, cocon'),
   M('mascot-voyage', 'Le Baroudeur', 'voyage', 'voyage, valise, vacances, hotel'),
-  M('mascot-sante', 'Le Zen', 'sante', 'yoga, mediter, meditation, respirer, sante'),
+  M('mascot-sante', 'Le Zen', 'sante', 'yoga, pilates, mediter, meditation, respirer, sante'),
   M('mascot-creatif', "L'Artiste", 'creatif', 'dessin, croquis, peindre, creatif, peinture'),
 ];
 

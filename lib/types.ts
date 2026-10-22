@@ -32,6 +32,8 @@ export interface Item {
   aiReason?: string | null;
   /** Faisable en moins de 2 minutes (règle GTD) : à faire tout de suite. */
   quick?: boolean;
+  /** Liens pour passer à l'action (réserver, prendre rendez-vous, démarche en ligne). */
+  links?: ProjectLink[] | null;
   doneAt?: string | null;
   createdAt: string;
   updatedAt?: string;
@@ -55,6 +57,12 @@ export interface Project {
   notes?: string | null;
   dueDate?: string | null;
   links: ProjectLink[];
+  /** Projet parent : un sous-projet s'affiche replié sous lui. */
+  parentId?: string | null;
+  /** Épinglé : toujours visible en haut du menu et de la liste. */
+  pinned?: boolean;
+  /** Archivé : caché partout, sans être supprimé. */
+  archivedAt?: string | null;
   aiSorted?: boolean;
   createdAt: string;
   updatedAt?: string;
@@ -105,6 +113,8 @@ export interface Settings {
   reviewEvery: number;
   /** Personnages nuages sur les cartes (à couper pour un usage plus pro). */
   showMascots: boolean;
+  /** Ville, pour que l'IA trouve les bons liens (restaurant, salle, médecin). */
+  city?: string;
 }
 
 /** Ce qui a été supprimé : récupérable pendant 30 jours. */
@@ -145,6 +155,10 @@ export interface AiItem {
   url?: string | null;
   note?: string | null;
   quick?: boolean | null;
+  links?: { label?: string; url?: string }[] | null;
+  /** Recherche web à lancer pour trouver le lien qui permet d'agir. */
+  lookup?: string | null;
+  place?: string | null;
   newProject?: { name?: string; domainId?: string | null; outcome?: string } | null;
   reason?: string;
 }

@@ -7,22 +7,38 @@ import { CardList } from '../Card';
 import { Icon } from '../icons';
 import { Head, MonthGrid } from './Calendar';
 import { PinList, AddPin } from './Pins';
-import { PSTATUSES, contextsOf, sortItems, backlog, colorOfProject, domainOfProject, domainsSorted, list, projectStats, projectsSorted } from '@/lib/gtd';
+import { PSTATUSES, childrenOf, parentOf, contextsOf, sortItems, backlog, colorOfProject, domainOfProject, domainsSorted, list, projectStats, projectsSorted } from '@/lib/gtd';
 import { MONTHS, isoOf, longDate, relDate, todayIso } from '@/lib/dates';
 
-function PCard({ p }: { p: Project }) {
-  const { data } = useStore();
-  const { go } = useUI();
+function PCard({ p, all }: { p: Project; all: Project[] }) {
+  const store = useStore();
+  const { data } = store;
+  const { go, toast } = useUI();
+  const [open, setOpen] = useState(false);
   const st = projectStats(data, p.id);
   const pct = st.total ? Math.round((st.done / st.total) * 100) : 0;
   const g = p.goalId ? data.goals[p.goalId] : null;
   const color = colorOfProject(data, p);
+  const kids = childrenOf(data, p.id, all);
+  const openIt = () => go('project', { projectId: p.id });
   return (
-    <button className="pcard" onClick={() => go('project', { projectId: p.id })}>
+    <div className={`pcard${p.pinned ? ' pinned' : ''}${open ? ' open' : ''}`} onClick={openIt} role="button" tabIndex={0} onKeyDown={(e) => e.target === e.currentTarget && e.key === 'Enter' && openIt()}>
       <div className="pn">
         <i className="dot" style={{ background: color }} />
         <span>{p.name}</span>
         {p.aiSorted && <span className="chip ai">IA</span>}
+        <button
+          className={`pin-btn${p.pinned ? ' on' : ''}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            store.updateProject(p.id, { pinned: !p.pinned });
+            toast({ text: p.pinned ? 'Retiré des épinglés' : 'Épinglé en haut du menu' });
+          }}
+          aria-label={p.pinned ? 'Désépingler' : 'Épingler'}
+          title={p.pinned ? 'Désépingler' : 'Épingler en haut'}
+        >
+          <Icon name="pin" />
+        </button>
       </div>
       <div className={`po${p.outcome ? '' : ' missing'}`}>{p.outcome || 'Résultat attendu à définir'}</div>
       <div className="bar">
@@ -35,6 +51,7 @@ function PCard({ p }: { p: Project }) {
         {p.dueDate && <span className={`chip date${p.dueDate < todayIso() ? ' over' : ''}`}>⚑ {relDate(p.dueDate)}</span>}
       </div>
       {p.status === 'active' &&
+        !p.archivedAt &&
         (st.next ? (
           <div className="pnext">
             <span className="k">Ensuite</span>
@@ -52,32 +69,99 @@ function PCard({ p }: { p: Project }) {
           </span>
         </div>
       )}
-    </button>
+      {kids.length > 0 && (
+        <>
+          <button
+            className="sub-toggle"
+            aria-expanded={open}
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen(!open);
+            }}
+          >
+            <Icon name="right" />
+            {kids.length} sous-projet{kids.length > 1 ? 's' : ''}
+          </button>
+          {open && (
+            <div className="sub-list" onClick={(e) => e.stopPropagation()}>
+              {kids.map((k) => (
+                <SubRow key={k.id} p={k} all={all} depth={0} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
+
+/** Un sous-projet dans la carte de son parent (et ses propres sous-projets, repliables). */
+function SubRow({ p, all, depth }: { p: Project; all: Project[]; depth: number }) {
+  const { data } = useStore();
+  const { go } = useUI();
+  const [open, setOpen] = useState(false);
+  const kids = depth < 5 ? childrenOf(data, p.id, all) : [];
+  const st = projectStats(data, p.id);
+  return (
+    <>
+      <div className="sub-row" style={{ paddingLeft: depth * 14 }}>
+        {kids.length > 0 ? (
+          <button className={`nav-caret${open ? ' open' : ''}`} onClick={() => setOpen(!open)} aria-expanded={open} aria-label={`${open ? 'Replier' : 'Déplier'} ${p.name}`}>
+            <Icon name="right" />
+          </button>
+        ) : (
+          <i className="dot" style={{ background: colorOfProject(data, p) }} />
+        )}
+        <button className="sub-name" onClick={() => go('project', { projectId: p.id })}>
+          {p.name}
+        </button>
+        <span className="mono">
+          {st.done}/{st.total}
+        </span>
+      </div>
+      {open && kids.map((k) => <SubRow key={k.id} p={k} all={all} depth={depth + 1} />)}
+    </>
+  );
+}
+
+type Tab = Project['status'] | 'archived';
 
 export function ProjectsView() {
   const { data } = useStore();
   const { ui, openDrawer } = useUI();
-  const [tab, setTab] = useState<Project['status']>('active');
+  const [tab, setTab] = useState<Tab>('active');
+  const [closed, setClosed] = useState<Set<string>>(() => new Set());
   const df = ui.domainFilter;
   const doms = domainsSorted(data).filter((d) => !df || d.id === df);
-  const all = projectsSorted(data).filter((p) => p.status === tab);
+  const all = tab === 'archived' ? projectsSorted(data, { archived: true }) : projectsSorted(data).filter((p) => p.status === tab);
+  // Un sous-projet s'affiche dans la carte de son parent ; seul s'il n'a pas de parent dans cette liste.
+  const top = all.filter((p) => {
+    const par = parentOf(data, p);
+    return !par || !all.includes(par);
+  });
   const blocks = doms
-    .map((d) => [d, all.filter((p) => p.domainId === d.id)] as const)
+    .map((d) => [d, top.filter((p) => p.domainId === d.id)] as const)
     .filter(([, ps]) => ps.length);
-  const orphans = df ? [] : all.filter((p) => !p.domainId || !data.domains[p.domainId]);
+  const orphans = df ? [] : top.filter((p) => !p.domainId || !data.domains[p.domainId]);
   const title = df && data.domains[df] ? data.domains[df].name : 'Projets';
+  const flip = (id: string) =>
+    setClosed((c) => {
+      const n = new Set(c);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const tabs: [Tab, string][] = [...PSTATUSES, ['archived', 'Archivés']];
   return (
     <>
       <Head
         eyebrow="Organiser"
         title={title}
-        lede={df ? 'Les projets de ce domaine.' : 'Tous tes projets, rangés par domaine de vie.'}
+        lede={df ? 'Les projets de ce domaine.' : 'Tous tes projets, rangés par domaine de vie. Épingle ceux du moment, archive ceux qui dorment.'}
         actions={
           <>
             <div className="seg">
-              {PSTATUSES.map(([k, l]) => (
+              {tabs.map(([k, l]) => (
                 <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
                   {l}
                 </button>
@@ -97,33 +181,38 @@ export function ProjectsView() {
       />
       {!blocks.length && !orphans.length ? (
         <div className="empty">
-          Aucun projet {tab === 'active' ? 'actif' : tab === 'paused' ? 'en pause' : 'terminé'} ici. En GTD, un projet c&apos;est tout résultat qui demande plus d&apos;une action.
+          {tab === 'archived' ? (
+            'Aucun projet archivé. Archive un projet qui dort : il disparaît du menu sans être supprimé.'
+          ) : (
+            <>
+              Aucun projet {tab === 'active' ? 'actif' : tab === 'paused' ? 'en pause' : 'terminé'} ici. En GTD, un projet c&apos;est tout résultat qui demande plus d&apos;une action.
+            </>
+          )}
         </div>
       ) : (
         <div className="stack">
-          {blocks.map(([d, ps]) => (
-            <div className="dom-block" key={d.id}>
-              <div className="dom-title">
-                <i className="sw" style={{ background: `var(--${d.color})` }} />
-                {d.name}
+          {[...blocks.map(([d, ps]) => ({ key: d.id, name: d.name, color: `var(--${d.color})`, ps })), ...(orphans.length ? [{ key: 'none', name: 'Sans domaine', color: 'var(--line-2)', ps: orphans }] : [])].map((b) => {
+            const isOpen = !closed.has(b.key);
+            return (
+              <div className="dom-block" key={b.key}>
+                <button className="dom-title" onClick={() => flip(b.key)} aria-expanded={isOpen}>
+                  <span className={`nav-caret${isOpen ? ' open' : ''}`} aria-hidden="true">
+                    <Icon name="right" />
+                  </span>
+                  <i className="sw" style={{ background: b.color }} />
+                  {b.name}
+                  <span className="n">{b.ps.length}</span>
+                </button>
+                {isOpen && (
+                  <div className="pgrid">
+                    {b.ps.map((p) => (
+                      <PCard key={p.id} p={p} all={all} />
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="pgrid">
-                {ps.map((p) => (
-                  <PCard key={p.id} p={p} />
-                ))}
-              </div>
-            </div>
-          ))}
-          {orphans.length > 0 && (
-            <div className="dom-block">
-              <div className="dom-title">Sans domaine</div>
-              <div className="pgrid">
-                {orphans.map((p) => (
-                  <PCard key={p.id} p={p} />
-                ))}
-              </div>
-            </div>
-          )}
+            );
+          })}
         </div>
       )}
     </>
@@ -153,6 +242,8 @@ export function ProjectView() {
     );
   }
   const d = domainOfProject(data, p);
+  const parent = parentOf(data, p);
+  const kids = childrenOf(data, id);
   const g = p.goalId ? data.goals[p.goalId] : null;
   const st = projectStats(data, id);
   const nodate = backlog(data, id);
@@ -181,10 +272,17 @@ export function ProjectView() {
   return (
     <>
       <div style={{ marginBottom: 10 }}>
-        <button className="btn ghost sm" onClick={() => go('projects')}>
-          <Icon name="left" />
-          Projets
-        </button>
+        {parent ? (
+          <button className="btn ghost sm" onClick={() => go('project', { projectId: parent.id })}>
+            <Icon name="left" />
+            {parent.name}
+          </button>
+        ) : (
+          <button className="btn ghost sm" onClick={() => go('projects')}>
+            <Icon name="left" />
+            Projets
+          </button>
+        )}
       </div>
       <Head
         eyebrow={d ? d.name : 'Projet'}
@@ -192,6 +290,31 @@ export function ProjectView() {
         actions={
           <>
             {p.aiSorted && <span className="chip ai">Créé par l&apos;IA</span>}
+            {p.archivedAt && <span className="chip">Archivé</span>}
+            <button
+              className={`icon-btn pin-btn${p.pinned ? ' on' : ''}`}
+              onClick={() => {
+                store.updateProject(id, { pinned: !p.pinned });
+                toast({ text: p.pinned ? 'Retiré des épinglés' : 'Épinglé en haut du menu' });
+              }}
+              aria-label={p.pinned ? 'Désépingler' : 'Épingler'}
+              title={p.pinned ? 'Désépingler' : 'Épingler en haut du menu'}
+            >
+              <Icon name="pin" />
+            </button>
+            <button
+              className="btn"
+              onClick={() => {
+                const archivedAt = p.archivedAt ? null : new Date().toISOString();
+                store.updateProject(id, { archivedAt, pinned: archivedAt ? false : p.pinned });
+                toast({
+                  text: archivedAt ? `${p.name} archivé : il ne s'affiche plus, rien n'est supprimé.` : `${p.name} est de retour`,
+                  actions: archivedAt ? [{ label: 'Annuler', run: () => store.updateProject(id, { archivedAt: null, pinned: p.pinned }) }] : undefined,
+                });
+              }}
+            >
+              {p.archivedAt ? 'Désarchiver' : 'Archiver'}
+            </button>
             <div className="seg">
               {PSTATUSES.map(([k, l]) => (
                 <button key={k} className={p.status === k ? 'on' : ''} onClick={() => store.updateProject(id, { status: k })}>
@@ -242,6 +365,24 @@ export function ProjectView() {
               </div>
             )}
           </form>
+          <div className="sec">
+            <div className="sec-head">
+              <h2>
+                Sous-projets <span className="n">{kids.length}</span>
+              </h2>
+              <button className="btn ghost sm" onClick={() => openDrawer({ type: 'project', id: null, draft: { parentId: id, domainId: p.domainId || '' } })}>
+                <Icon name="plus" />
+                Ajouter un sous-projet
+              </button>
+            </div>
+            {kids.length > 0 && (
+              <div className="sub-list flat">
+                {kids.map((k) => (
+                  <SubRow key={k.id} p={k} all={projectsSorted(data)} depth={0} />
+                ))}
+              </div>
+            )}
+          </div>
           <div className="sec">
             <div className="sec-head">
               <h2>Calendrier du projet</h2>

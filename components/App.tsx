@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { StoreProvider, useStore } from '@/lib/store';
+import type { Data, Project } from '@/lib/types';
 import { UIProvider, useUI, type View } from './ui-context';
 import { Icon, type IconName } from './icons';
 import { Drawer } from './Drawer';
@@ -14,9 +15,10 @@ import { PinsView } from './views/Pins';
 import { SettingsView } from './views/Settings';
 import { HelpView } from './views/Help';
 import { TrashView } from './views/Trash';
+import { FeedbackButton, FeedbackView, isAdmin } from './Feedback';
 import { Mic } from './Mic';
 import { Logo } from './Logo';
-import { colorOfProject, counts, domainsSorted, lastReviewDays, list, projectStats, projectsSorted, reviewDue } from '@/lib/gtd';
+import { childrenOf, colorOfProject, counts, parentOf, domainsSorted, lastReviewDays, list, projectStats, projectsSorted, reviewDue } from '@/lib/gtd';
 import { addDays, longDate, nextMonday, timeOf, todayIso } from '@/lib/dates';
 
 const IMPORT_ERRORS: Record<string, string> = {
@@ -38,6 +40,84 @@ function NavBtn({ view, label, icon, n, hot, warn }: { view: View; label: string
   );
 }
 
+/* Domaines et projets repliés par défaut ; on se souvient de ce qui est ouvert. On déplie tout seul le chemin du projet affiché. */
+function useOpened(data: Data, current: string | null) {
+  const [opened, setOpened] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    try {
+      setOpened(new Set(JSON.parse(localStorage.getItem('sc-open-nav') || '[]')));
+    } catch {}
+  }, []);
+  useEffect(() => {
+    if (!current || !data.projects[current]) return;
+    const path: string[] = [];
+    let p: Project | null = data.projects[current];
+    while (p && !path.includes(p.id)) {
+      path.push(p.id);
+      if (p.domainId) path.push(p.domainId);
+      p = parentOf(data, p);
+    }
+    setOpened((o) => (path.every((x) => o.has(x)) ? o : new Set([...o, ...path])));
+  }, [current, data]);
+  const toggle = (id: string) =>
+    setOpened((o) => {
+      const n = new Set(o);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      try {
+        localStorage.setItem('sc-open-nav', JSON.stringify([...n]));
+      } catch {}
+      return n;
+    });
+  return { opened, toggle };
+}
+
+function Caret({ open, onClick, label }: { open: boolean; onClick: () => void; label: string }) {
+  return (
+    <button className={`nav-caret${open ? ' open' : ''}`} onClick={onClick} aria-expanded={open} aria-label={`${open ? 'Replier' : 'Déplier'} ${label}`}>
+      <Icon name="right" />
+    </button>
+  );
+}
+
+function ProjNav({ p, depth, projects, opened, toggle }: { p: Project; depth: number; projects: Project[]; opened: Set<string>; toggle: (id: string) => void }) {
+  const { data } = useStore();
+  const { ui, go } = useUI();
+  const kids = depth < 6 ? childrenOf(data, p.id, projects) : [];
+  const isOpen = opened.has(p.id);
+  const st = projectStats(data, p.id);
+  return (
+    <>
+      <div className="nav-row" style={{ '--depth': depth } as React.CSSProperties}>
+        <button className={`nav sub${ui.view === 'project' && ui.projectId === p.id ? ' on' : ''}`} onClick={() => go('project', { projectId: p.id })}>
+          <i className="pdot" style={{ background: colorOfProject(data, p) }} />
+          <span>{p.name}</span>
+          {st.open.length ? <span className="n">{st.open.length}</span> : null}
+        </button>
+        {kids.length > 0 && <Caret open={isOpen} onClick={() => toggle(p.id)} label={p.name} />}
+      </div>
+      {isOpen && kids.map((k) => <ProjNav key={k.id} p={k} depth={depth + 1} projects={projects} opened={opened} toggle={toggle} />)}
+    </>
+  );
+}
+
+/** Le nuage qui danse quand on coche une action, la fête quand tout un projet est fini. */
+function Dance() {
+  const { ui } = useUI();
+  const d = ui.dance;
+  if (!d) return null;
+  const puffs = d.big ? [[-120, -80], [110, -90], [-90, 60], [130, 40], [0, -130], [-150, -10]] : [];
+  return (
+    <div className={`dance${d.big ? ' big' : ''}`} key={d.key} aria-live="polite">
+      {puffs.map(([dx, dy], i) => (
+        <i key={i} className="puff" style={{ '--dx': `${dx}px`, '--dy': `${dy}px`, animationDelay: `${0.15 + i * 0.12}s` } as React.CSSProperties} />
+      ))}
+      {d.src ? <img src={d.src} alt="" /> : <span className="logo-dance"><Logo size={d.big ? 150 : 92} /></span>}
+      {d.text && <span className="dance-text">{d.text}</span>}
+    </div>
+  );
+}
+
 function Sidebar() {
   const store = useStore();
   const { data } = store;
@@ -46,7 +126,9 @@ function Sidebar() {
   const lr = lastReviewDays(data);
   const doms = domainsSorted(data);
   const projects = projectsSorted(data).filter((p) => p.status === 'active');
-  const orphans = projects.filter((p) => !p.domainId || !data.domains[p.domainId]);
+  const orphans = projects.filter((p) => (!p.domainId || !data.domains[p.domainId]) && !parentOf(data, p));
+  const pinned = projects.filter((p) => p.pinned);
+  const { opened, toggle } = useOpened(data, ui.view === 'project' ? ui.projectId : null);
   return (
     <>
       <aside className="side" aria-label="Navigation">
@@ -81,6 +163,17 @@ function Sidebar() {
           <NavBtn view="review" label="Revue" icon="review" n={reviewDue(data) ? (lr === null ? '!' : `${lr} j`) : undefined} warn />
           <NavBtn view="journal" label="Journal" icon="done" />
         </div>
+        {pinned.length > 0 && (
+          <div className="nav-group">
+            <div className="nav-label">Épinglés</div>
+            {pinned.map((p) => (
+              <button key={p.id} className={`nav sub pinned${ui.view === 'project' && ui.projectId === p.id ? ' on' : ''}`} onClick={() => go('project', { projectId: p.id })}>
+                <i className="pdot" style={{ background: colorOfProject(data, p) }} />
+                <span>{p.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className="nav-group">
           <div className="nav-label">
             Domaines
@@ -89,42 +182,37 @@ function Sidebar() {
             </button>
           </div>
           {!doms.length && <div className="hint" style={{ padding: '2px 8px' }}>Aucun domaine pour l&apos;instant.</div>}
-          {doms.map((d) => (
-            <div key={d.id}>
-              <button className={`nav${ui.view === 'projects' && ui.domainFilter === d.id ? ' on' : ''}`} onClick={() => go('projects', { domain: d.id })}>
-                <i className="sw" style={{ background: `var(--${d.color})` }} />
-                <span>{d.name}</span>
-              </button>
-              {projects
-                .filter((p) => p.domainId === d.id)
-                .map((p) => {
-                  const st = projectStats(data, p.id);
-                  return (
-                    <button key={p.id} className={`nav sub${ui.view === 'project' && ui.projectId === p.id ? ' on' : ''}`} onClick={() => go('project', { projectId: p.id })}>
-                      <i className="pdot" style={{ background: colorOfProject(data, p) }} />
-                      <span>{p.name}</span>
-                      {st.open.length ? <span className="n">{st.open.length}</span> : null}
-                    </button>
-                  );
-                })}
-            </div>
-          ))}
+          {doms.map((d) => {
+            const top = projects.filter((p) => p.domainId === d.id && !parentOf(data, p));
+            const isOpen = opened.has(d.id);
+            return (
+              <div key={d.id}>
+                <div className="nav-row">
+                  <button className={`nav${ui.view === 'projects' && ui.domainFilter === d.id ? ' on' : ''}`} onClick={() => go('projects', { domain: d.id })}>
+                    <i className="sw" style={{ background: `var(--${d.color})` }} />
+                    <span>{d.name}</span>
+                    {!isOpen && top.length > 0 && <span className="n">{top.length}</span>}
+                  </button>
+                  {top.length > 0 && <Caret open={isOpen} onClick={() => toggle(d.id)} label={d.name} />}
+                </div>
+                {isOpen && top.map((p) => <ProjNav key={p.id} p={p} depth={0} projects={projects} opened={opened} toggle={toggle} />)}
+              </div>
+            );
+          })}
           {orphans.length > 0 && (
             <>
               <div className="nav-label" style={{ paddingTop: 8 }}>
                 Sans domaine
               </div>
               {orphans.map((p) => (
-                <button key={p.id} className={`nav sub${ui.view === 'project' && ui.projectId === p.id ? ' on' : ''}`} onClick={() => go('project', { projectId: p.id })}>
-                  <i className="pdot" style={{ background: colorOfProject(data, p) }} />
-                  <span>{p.name}</span>
-                </button>
+                <ProjNav key={p.id} p={p} depth={0} projects={projects} opened={opened} toggle={toggle} />
               ))}
             </>
           )}
         </div>
         <div className="side-foot">
           <NavBtn view="import" label="Importer depuis mes outils" icon="import" />
+          {isAdmin(store.email) && <NavBtn view="feedback" label="Remarques des testeurs" icon="chat" />}
           <NavBtn view="trash" label="Corbeille" icon="trash" />
           <NavBtn view="settings" label="Réglages" icon="gear" />
           <NavBtn view="help" label="Comment ça marche" icon="help" />
@@ -172,7 +260,7 @@ function TopBar() {
   const { ui, set, capture, toast } = useUI();
   const [v, setV] = useState('');
   const voice = useVoiceCapture(setV, (t) => capture(t));
-  const titles: Partial<Record<View, string>> = { day: 'Ma journée', inbox: 'Inbox', next: 'Prochaines actions', waiting: 'En attente', someday: 'Un jour / peut-être', projects: 'Projets', project: 'Projet', pins: 'Épinglés', goals: 'Objectifs', review: 'Revue', journal: 'Journal', import: 'Importer', settings: 'Réglages', help: 'Aide', trash: 'Corbeille' };
+  const titles: Partial<Record<View, string>> = { day: 'Ma journée', inbox: 'Inbox', next: 'Prochaines actions', waiting: 'En attente', someday: 'Un jour / peut-être', projects: 'Projets', project: 'Projet', pins: 'Épinglés', goals: 'Objectifs', review: 'Revue', journal: 'Journal', import: 'Importer', settings: 'Réglages', help: 'Aide', trash: 'Corbeille', feedback: 'Remarques' };
   return (
     <header className="top">
       <button className="icon-btn menu-btn" onClick={() => set({ navOpen: true })} aria-label="Ouvrir le menu">
@@ -207,6 +295,7 @@ function TopBar() {
         <i />
         <span>{store.mode === 'db' ? 'Synchronisé' : 'Mode démo : données dans ce navigateur'}</span>
       </div>
+      <FeedbackButton />
     </header>
   );
 }
@@ -417,6 +506,8 @@ function Main() {
       return <HelpView />;
     case 'trash':
       return <TrashView />;
+    case 'feedback':
+      return <FeedbackView />;
     default:
       return <CalendarView />;
   }
@@ -459,7 +550,7 @@ function Shell() {
     }
     try {
       const v = localStorage.getItem('sc-view') as View | null;
-      if (v && ['day', 'inbox', 'next', 'waiting', 'someday', 'projects', 'pins', 'goals', 'review', 'journal', 'settings', 'help', 'trash'].includes(v)) set({ view: v });
+      if (v && ['day', 'inbox', 'next', 'waiting', 'someday', 'projects', 'pins', 'goals', 'review', 'journal', 'settings', 'help', 'trash', 'feedback'].includes(v)) set({ view: v });
     } catch {
       /* ignore */
     }
@@ -607,6 +698,7 @@ function Shell() {
       <Drawer />
       <CaptureSheet />
       <PlanPopover />
+      <Dance />
       <Toast />
     </div>
   );
