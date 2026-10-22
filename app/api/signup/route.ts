@@ -4,14 +4,19 @@ import { getEmailLinkSupabase, isAllowedEmail, serverSupabaseConfigured } from '
 /** Création de compte : email + mot de passe, puis lien de confirmation envoyé par email. */
 export async function POST(req: Request) {
   if (!serverSupabaseConfigured()) return NextResponse.json({ error: 'not_configured' }, { status: 503 });
-  const { email, password } = (await req.json().catch(() => ({}))) as { email?: string; password?: string };
+  const { email, password, name } = (await req.json().catch(() => ({}))) as { email?: string; password?: string; name?: string };
+  const firstName = (typeof name === 'string' ? name : '').trim().replace(/\s+/g, ' ').slice(0, 60);
   const mail = (email || '').trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) return NextResponse.json({ error: 'bad_email' }, { status: 400 });
   if (!password || password.length < 8) return NextResponse.json({ error: 'weak_password' }, { status: 400 });
   if (!isAllowedEmail(mail)) return NextResponse.json({ error: 'not_invited' }, { status: 403 });
   const origin = process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin;
   const supabase = getEmailLinkSupabase();
-  const { data, error } = await supabase.auth.signUp({ email: mail, password, options: { emailRedirectTo: `${origin}/auth/finish?next=/app` } });
+  const { data, error } = await supabase.auth.signUp({
+    email: mail,
+    password,
+    options: { emailRedirectTo: `${origin}/auth/finish?next=/app`, data: firstName ? { first_name: firstName } : undefined },
+  });
   if (error) {
     const code = (error as { code?: string }).code || '';
     if (code === 'weak_password') return NextResponse.json({ error: 'weak_password' }, { status: 400 });

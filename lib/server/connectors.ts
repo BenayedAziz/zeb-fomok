@@ -285,7 +285,12 @@ export async function readIcs(url: string) {
   if (!/^https:\/\//i.test(u)) throw new Error('ics_bad_url');
   const r = await fetch(u, { headers: { Accept: 'text/calendar' } });
   if (!r.ok) throw new Error(`ics_fetch_failed:${r.status}`);
-  const text = (await r.text()).replace(/\r?\n[ \t]/g, '');
+  return parseIcs(await r.text());
+}
+
+/** Événements à venir d'un calendrier (.ics), en lignes de texte. */
+export function parseIcs(raw: string, label = 'Calendrier (lien ICS)') {
+  const text = raw.replace(/\r?\n[ \t]/g, '');
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const limit = new Date(Date.now() + 60 * 864e5).toISOString().slice(0, 10).replace(/-/g, '');
   const events: string[] = [];
@@ -302,5 +307,5 @@ export async function readIcs(url: string) {
     events.push(`- ${icsDate(start)} : ${get('SUMMARY') || 'Sans titre'}${rrule ? ` (récurrent : ${rrule})` : ''}${get('LOCATION') ? ` (${get('LOCATION')})` : ''}`);
     if (events.length >= 150) break;
   }
-  return `# Calendrier (lien ICS)\n${events.join('\n') || '(aucun événement à venir)'}`;
+  return `# ${label}\n${events.join('\n') || '(aucun événement à venir)'}`;
 }

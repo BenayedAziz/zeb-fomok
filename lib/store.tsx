@@ -46,6 +46,8 @@ export interface Store {
   ready: boolean;
   mode: 'db' | 'demo';
   email: string | null;
+  /** Prénom donné à la création du compte. */
+  name: string | null;
   error: string | null;
   /** Données à jour, y compris les écritures pas encore affichées. */
   get: () => Data;
@@ -90,6 +92,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<Data>(empty);
   const [ready, setReady] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
+  const [name, setName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const dataRef = useRef(data);
   dataRef.current = data;
@@ -114,6 +117,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
       const { data: u } = await supabase.auth.getUser();
       setEmail(u.user?.email ?? null);
+      const fn = u.user?.user_metadata?.first_name;
+      setName(typeof fn === 'string' && fn.trim() ? fn.trim() : null);
       const [it, pr, dm, gl, rv, pn, st] = await Promise.all([
         supabase.from('items').select('*'),
         supabase.from('projects').select('*'),
@@ -262,6 +267,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       ready,
       mode,
       email,
+      name,
       error,
       get: () => dataRef.current,
       addItem: (p) => insertRow<Item>('items', { status: 'inbox', title: '', ...p, id: p.id || uuid(), createdAt: nowIso() } as Item),
@@ -369,7 +375,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         errFn.current = fn;
       },
     };
-  }, [data, ready, mode, email, error, put, del, remote, supabase, toTrash, dropTrash]);
+  }, [data, ready, mode, email, name, error, put, del, remote, supabase, toTrash, dropTrash]);
 
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
 }

@@ -8,10 +8,17 @@ import { COLORS, DOMAIN_SUGGESTIONS, HORIZONS } from '@/lib/gtd';
 import { todayIso } from '@/lib/dates';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
-type Step = 'welcome' | 'interview' | 'recap' | 'manual' | 'tools';
+type Step = 'welcome' | 'interview' | 'recap' | 'manual' | 'tools' | 'first';
 
-const OPENING =
-  "Salut ! Je vais te poser quelques questions pour préparer ton espace : tes domaines de vie, tes objectifs et tes projets en cours. Ça prend 5 minutes, et tu pourras tout modifier ensuite.\n\nPour commencer : qu'est-ce qui occupe ta vie en ce moment ? Ton travail, tes projets à côté, le perso.";
+const opening = (name: string | null) =>
+  `Salut${name ? ` ${name}` : ''} ! Je vais te poser quelques questions pour préparer ton espace : tes domaines de vie, tes objectifs et tes projets en cours. Ça prend 5 minutes, et tu pourras tout modifier ensuite.\n\nPour commencer : qu'est-ce qui occupe ta vie en ce moment ? Ton travail, tes projets à côté, le perso.`;
+
+/* Exemples pour la première capture : on voit tout de suite ce que fait l'IA. */
+const FIRST_EXAMPLES = [
+  'Dentiste jeudi 10h et rappeler maman ce soir',
+  'Réserver un resto pour samedi soir avec Sarah',
+  'Faut que je renouvelle mon passeport avant l’été',
+];
 
 interface Summary {
   domains: { name: string; on: boolean }[];
@@ -27,6 +34,7 @@ function StepsBar({ step }: { step: Step }) {
     [['interview', 'manual'], 'Entretien'],
     [['recap'], 'Récap'],
     [['tools'], 'Tes outils'],
+    [['first'], 'Premier essai'],
   ];
   const idx = order.findIndex(([s]) => s.includes(step));
   return (
@@ -42,9 +50,10 @@ function StepsBar({ step }: { step: Step }) {
 
 export function Onboarding({ onFinish }: { onFinish: () => void }) {
   const store = useStore();
-  const { toast } = useUI();
+  const { toast, capture } = useUI();
   const [step, setStep] = useState<Step>('welcome');
-  const [msgs, setMsgs] = useState<Msg[]>([{ role: 'assistant', content: OPENING }]);
+  const [msgs, setMsgs] = useState<Msg[]>(() => [{ role: 'assistant', content: opening(store.name) }]);
+  const [first, setFirst] = useState('');
   const [draft, setDraft] = useState('');
   const [thinking, setThinking] = useState(false);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -153,6 +162,14 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
     onFinish();
   };
 
+  /* Première capture : l'IA range pendant qu'on arrive sur la journée, la notification montre le résultat. */
+  const tryFirst = (text: string) => {
+    const t = text.trim();
+    if (!t) return;
+    finish();
+    void capture(t);
+  };
+
   return (
     <div className="onb">
       <StepsBar step={step} />
@@ -160,9 +177,9 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
       {step === 'welcome' && (
         <>
           <div>
-            <div className="eyebrow">Bienvenue</div>
+            <div className="eyebrow">Bienvenue{store.name ? ` ${store.name}` : ''}</div>
             <h1>
-              Ton <em>second cerveau</em>, prêt en 10 minutes.
+              Ton <em>second cerveau</em>, prêt en 5 minutes.
             </h1>
             <p className="lede">
               Tu notes tout ce qui te passe par la tête, l&apos;IA le range dans le bon projet, et tu retrouves ta journée, ta semaine et ton mois au même endroit. C&apos;est la méthode Getting Things Done, sans la paperasse.
@@ -351,8 +368,53 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
             }}
           />
           <div className="vh-actions">
-            <button className="btn primary lg" onClick={finish}>
-              Aller à ma journée
+            <button className="btn primary lg" onClick={() => setStep('first')}>
+              Continuer
+            </button>
+            <button className="btn lg" onClick={() => setStep('first')}>
+              Plus tard
+            </button>
+          </div>
+        </>
+      )}
+
+      {step === 'first' && (
+        <>
+          <div>
+            <div className="eyebrow">Premier essai</div>
+            <h1>
+              Note ce que tu as <em>en tête</em>.
+            </h1>
+            <p className="lede">Écris comme ça vient, plusieurs choses d&apos;un coup si tu veux. L&apos;IA en fait des actions claires, avec la date, le projet et les liens pour agir.</p>
+          </div>
+          <form
+            className="halo onb-first"
+            onSubmit={(e) => {
+              e.preventDefault();
+              tryFirst(first);
+            }}
+          >
+            <div className="capture">
+              <label htmlFor="onb-first" className="sr">
+                Ta première note
+              </label>
+              <input id="onb-first" value={first} onChange={(e) => setFirst(e.target.value)} placeholder="Note une idée, une tâche, un rendez-vous…" autoFocus autoComplete="off" />
+              <button className="btn primary" type="submit" disabled={!first.trim()}>
+                Capturer
+              </button>
+            </div>
+          </form>
+          <div className="onb-examples">
+            <span className="hint">Ou essaie avec :</span>
+            {FIRST_EXAMPLES.map((x) => (
+              <button key={x} className="chip link" onClick={() => tryFirst(x)}>
+                {x}
+              </button>
+            ))}
+          </div>
+          <div className="vh-actions">
+            <button className="btn lg" onClick={finish}>
+              Passer, aller à ma journée
             </button>
           </div>
         </>
