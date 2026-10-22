@@ -57,6 +57,12 @@ export interface Project {
   notes?: string | null;
   dueDate?: string | null;
   links: ProjectLink[];
+  /** Projet parent : un sous-projet s'affiche replié sous lui. */
+  parentId?: string | null;
+  /** Épinglé : toujours visible en haut du menu et de la liste. */
+  pinned?: boolean;
+  /** Archivé : caché partout, sans être supprimé. */
+  archivedAt?: string | null;
   aiSorted?: boolean;
   createdAt: string;
   updatedAt?: string;

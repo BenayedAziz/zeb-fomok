@@ -4,7 +4,7 @@ Appli GTD (Getting Things Done) en français. Tutoiement, ton direct, pas de jar
 
 ## Pile
 - Next.js 15 App Router + TypeScript strict, React 19, pas de framework CSS : tout le style est dans `app/globals.css` (jetons de couleur clair/sombre en haut du fichier, classes par composant).
-- Supabase : comptes email + mot de passe avec confirmation par email (`/api/login`, `/api/signup`, `/api/reset`, retours dans `/auth/callback` et `/auth/confirm`), tables `domains`, `goals`, `projects`, `items`, `pins`, `settings`, `reviews`, `ai_usage` (voir `supabase/migrations`). Row Level Security partout : `user_id = auth.uid()`. Toute nouvelle table doit avoir sa policy.
+- Supabase : comptes email + mot de passe avec confirmation par email (`/api/login`, `/api/signup`, `/api/reset`, retours dans `/auth/callback` et `/auth/confirm`), tables `domains`, `goals`, `projects`, `items`, `pins`, `settings`, `reviews`, `ai_usage`, `trash`, `feedback` (voir `supabase/migrations`). Row Level Security partout : `user_id = auth.uid()`. Toute nouvelle table doit avoir sa policy.
 - IA : `@anthropic-ai/sdk` côté serveur uniquement (`lib/server/ai.ts`), routes `app/api/*`. Chaque appel passe par `guardAi()` (session + quota par jour).
 - Sans variables Supabase, l'appli tourne en **mode démo** (localStorage) : garder ce mode fonctionnel, il sert aux tests.
 
@@ -18,6 +18,10 @@ Appli GTD (Getting Things Done) en français. Tutoiement, ton direct, pas de jar
 - Un élément est une tâche (`kind: 'task'`, se coche quand elle est faite) ou un événement (`kind: 'event'`, se coche quand il est passé : grisé avec rayures). Durée en minutes dans `duration`. Répétition : `recurrence` + `recurrenceDays` (hebdo) + `recurrenceInterval` ; moteur dans `lib/dates.ts` (`matchesRule`, `nextOccurrence`).
 - Les réglages (`data.settings`) adaptent l'interface : contextes, priorités, listes affichées. Toujours respecter `showContexts`, `showPriorities`, `showWaitingSomeday`.
 - Statuts d'un élément : inbox, todo, doing, waiting, someday, done. Tout ce que range l'IA porte `aiSorted: true` jusqu'à validation par l'utilisateur. Une tâche faisable en moins de 2 minutes porte `quick: true`.
+- Liens pour agir : `items.links` (`{label, url}`). Le rangement ne donne que des sites sûrs (liste `SAFE_HOSTS` dans `lib/server/ai.ts`) et le plan ; `/api/links` cherche sur le web la page de réservation et ne garde que les adresses vues dans les résultats. Ne jamais afficher un lien inventé.
+- Contexte @ : toujours rempli pour une tâche (IA, sinon `guessContext` dans `lib/gtd.ts`).
+- Projets : sous-projets via `parentId` (arbre replié dans le menu), `pinned` en haut, `archivedAt` cache sans supprimer. `projectsSorted` exclut les archivés.
+- Remarques des testeurs : table `feedback`, tout compte connecté écrit, seul l'admin (`ADMIN_EMAILS` dans `components/Feedback.tsx`, même adresse dans la migration 007) lit.
 - Supprimer un élément ou une épingle l'envoie à la corbeille (table `trash`, 30 jours) ; `forget` seulement pour annuler une création toute fraîche.
 - Dates en chaînes `AAAA-MM-JJ` locales (`lib/dates.ts`), heures `HH:MM`.
 - Avant de livrer : `npm run typecheck` et `npm run build`.

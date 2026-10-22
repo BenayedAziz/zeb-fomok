@@ -127,7 +127,40 @@ export function byTime(a: Item, b: Item) {
 }
 
 export const domainsSorted = (d: Data) => list(d.domains).sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
-export const projectsSorted = (d: Data) => list(d.projects).sort((a, b) => a.name.localeCompare(b.name));
+/** Projets non archivés : les épinglés d'abord, puis par nom. */
+export const projectsSorted = (d: Data, o: { archived?: boolean } = {}) =>
+  list(d.projects)
+    .filter((p) => (o.archived ? !!p.archivedAt : !p.archivedAt))
+    .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || a.name.localeCompare(b.name));
+
+/** Le parent d'un projet, s'il existe encore et n'est pas archivé. */
+export const parentOf = (d: Data, p: Project) => (p.parentId && p.parentId !== p.id && d.projects[p.parentId] && !d.projects[p.parentId].archivedAt ? d.projects[p.parentId] : null);
+export const childrenOf = (d: Data, id: string, ps = projectsSorted(d)) => ps.filter((p) => p.parentId === id && p.id !== id);
+/** Le projet et tous ses sous-projets, sans boucler si les parents se croisent. */
+export function familyIds(d: Data, id: string): string[] {
+  const out: string[] = [];
+  const walk = (x: string) => {
+    if (out.includes(x)) return;
+    out.push(x);
+    list(d.projects)
+      .filter((p) => p.parentId === x)
+      .forEach((p) => walk(p.id));
+  };
+  walk(id);
+  return out;
+}
+/** « Titre de séjour › Dossier préfecture » */
+export function projectPath(d: Data, p: Project): string {
+  const names = [p.name];
+  let cur = parentOf(d, p);
+  const seen = new Set([p.id]);
+  while (cur && !seen.has(cur.id)) {
+    names.unshift(cur.name);
+    seen.add(cur.id);
+    cur = parentOf(d, cur);
+  }
+  return names.join(' › ');
+}
 export const goalsSorted = (d: Data) => list(d.goals).sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
 
 /** Une entrée de calendrier : l'élément lui-même, ou une répétition à venir (`ghost`). */

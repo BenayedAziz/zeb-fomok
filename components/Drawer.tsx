@@ -4,7 +4,7 @@ import { useStore } from '@/lib/store';
 import type { Item, Project, Recurrence } from '@/lib/types';
 import { useUI } from './ui-context';
 import { Icon } from './icons';
-import { COLORS, DURATIONS, HORIZONS, PRIORITIES, PSTATUSES, RECURRENCES, STATUSES, ST, WEEKDAYS_PICK, colorKeyOfProject, contextsOf, domainsSorted, goalsSorted, freeColor, hostOf, isEvent, linksIn, projectsSorted, recLabel } from '@/lib/gtd';
+import { COLORS, DURATIONS, HORIZONS, PRIORITIES, PSTATUSES, RECURRENCES, STATUSES, ST, WEEKDAYS_PICK, colorKeyOfProject, contextsOf, domainsSorted, goalsSorted, freeColor, hostOf, isEvent, linksIn, projectsSorted, recLabel, familyIds, projectPath } from '@/lib/gtd';
 import { fmtDuration, todayIso } from '@/lib/dates';
 
 function Head({ label, onClose }: { label: string; onClose: () => void }) {
@@ -45,7 +45,7 @@ function ProjectSelect({ value, onChange, id }: { value?: string | null; onChang
           <optgroup key={d.id} label={d.name}>
             {inD.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name}
+                {projectPath(data, p)}
               </option>
             ))}
           </optgroup>
@@ -337,7 +337,7 @@ function ProjectDrawer({ id, draft }: { id: string | null; draft?: Record<string
   const { closeDrawer, go, toast } = useUI();
   const creating = !id;
   const p = id ? store.data.projects[id] : null;
-  const [form, setForm] = useState<Record<string, string>>(() => ({ name: '', outcome: '', description: '', domainId: '', dueDate: '', goalId: '', ...(draft || {}) }));
+  const [form, setForm] = useState<Record<string, string>>(() => ({ name: '', outcome: '', description: '', domainId: '', dueDate: '', goalId: '', parentId: '', ...(draft || {}) }));
   const [confirm, setConfirm] = useState(false);
   if (!creating && !p) return null;
   const val = (k: keyof Project) => (creating ? form[k as string] || '' : ((p![k] as string) || ''));
@@ -354,6 +354,7 @@ function ProjectDrawer({ id, draft }: { id: string | null; draft?: Record<string
       domainId: form.domainId || null,
       dueDate: form.dueDate || null,
       goalId: form.goalId || null,
+      parentId: form.parentId || null,
       color: form.color || freeColor(store.data),
     });
     go('project', { projectId: np.id });
@@ -396,6 +397,28 @@ function ProjectDrawer({ id, draft }: { id: string | null; draft?: Record<string
             <input className="inp" type="date" value={val('dueDate')} onChange={(e) => change('dueDate', e.target.value)} />
           </label>
         </div>
+        <label className="fld">
+          <span>Dans le projet</span>
+          <select
+            className="inp"
+            value={val('parentId')}
+            onChange={(e) => {
+              change('parentId', e.target.value);
+              // Un sous-projet prend le domaine de son parent s'il n'en a pas.
+              const par = e.target.value ? store.data.projects[e.target.value] : null;
+              if (par?.domainId && !val('domainId')) change('domainId', par.domainId);
+            }}
+          >
+            <option value="">Aucun (projet principal)</option>
+            {projectsSorted(store.data)
+              .filter((x) => x.status !== 'done' && (!id || !familyIds(store.data, id).includes(x.id)))
+              .map((x) => (
+                <option key={x.id} value={x.id}>
+                  {projectPath(store.data, x)}
+                </option>
+              ))}
+          </select>
+        </label>
         <div className="fld">
           <span>Couleur dans le calendrier</span>
           <div className="swatches">

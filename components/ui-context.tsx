@@ -2,12 +2,13 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import type { AiItem, Data, Item } from '@/lib/types';
-import { PR, REC, ST, contextsOf, domainsSorted, freeColor, guessContext, mergeLinks, projectsSorted, recLabel } from '@/lib/gtd';
+import { PR, REC, ST, contextsOf, projectPath, projectStats, domainsSorted, freeColor, guessContext, mergeLinks, projectsSorted, recLabel } from '@/lib/gtd';
+import { mascotFor } from '@/lib/mascots';
 import { isDate, isTime, nextOccurrence, pad, relDate, todayIso } from '@/lib/dates';
 
 export type View =
   | 'day' | 'inbox' | 'next' | 'waiting' | 'someday' | 'projects' | 'project' | 'pins'
-  | 'goals' | 'review' | 'journal' | 'import' | 'settings' | 'help' | 'onboarding' | 'trash';
+  | 'goals' | 'review' | 'journal' | 'import' | 'settings' | 'help' | 'onboarding' | 'trash' | 'feedback';
 export type CalMode = 'day' | 'week' | 'month';
 export type DrawerState =
   | { type: 'item'; id: string }
@@ -41,6 +42,8 @@ interface UI {
   pending: Record<string, boolean>;
   /** Cochés à l'instant : déclenche l'animation, puis s'efface. */
   justDone: Record<string, boolean>;
+  /** Le nuage qui danse quand on coche (big : tout un projet est fini). */
+  dance: { key: number; src: string | null; text?: string; big: boolean } | null;
   /** L'IA cherche un lien pour passer à l'action. */
   linking: Record<string, boolean>;
   aiOff: boolean;
@@ -84,7 +87,7 @@ export function aiContext(d: Data) {
     domains: domainsSorted(d).map((x) => ({ id: x.id, name: x.name })),
     projects: projectsSorted(d)
       .filter((p) => p.status !== 'done')
-      .map((p) => ({ id: p.id, name: p.name, domain: p.domainId ? d.domains[p.domainId]?.name : undefined, outcome: p.outcome || undefined })),
+      .map((p) => ({ id: p.id, name: projectPath(d, p), domain: p.domainId ? d.domains[p.domainId]?.name : undefined, outcome: p.outcome || undefined })),
   };
 }
 
@@ -180,6 +183,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     pending: {},
     justDone: {},
     linking: {},
+    dance: null,
     aiOff: false,
     importSource: null,
   }));
@@ -527,6 +531,33 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
         const clone = s.addItem({ ...rest, status: 'todo', date: nd, doneAt: null, aiSorted: false });
         nextId = clone.id;
         extra = ` · prochaine : ${relDate(nd)}`;
+      }
+      // Un nuage danse ; si c'était la dernière action du projet, c'est la fête.
+      const d = s.get();
+      const pr = it.projectId ? d.projects[it.projectId] : null;
+      const showM = d.settings.showMascots !== false;
+      const st = pr ? projectStats(d, pr.id) : null;
+      const finished = !!(pr && st && st.total > 0 && !st.open.length && it.kind !== 'event');
+      const domName = (pr?.domainId ? d.domains[pr.domainId]?.name : null) || (it.domainId ? d.domains[it.domainId]?.name : null);
+      if (finished || showM) {
+        const key = Date.now();
+        setUi((u) => ({
+          ...u,
+          dance: finished
+            ? { key, big: true, src: showM ? '/mascots/anniversaire.webp' : null, text: `${pr!.name} : tout est fait !` }
+            : { key, big: false, src: mascotFor(it.title, domName)?.src || '/mascots/idee.webp' },
+        }));
+        setTimeout(() => setUi((u) => (u.dance?.key === key ? { ...u, dance: null } : u)), finished ? 2700 : 1400);
+      }
+      if (finished) {
+        toast({
+          text: `Toutes les actions de ${pr!.name} sont faites`,
+          actions: [
+            { label: 'Terminer le projet', run: () => s.updateProject(pr!.id, { status: 'done' }) },
+            { label: 'Annuler', run: () => s.updateItem(id, { status: prev.status, doneAt: null }) },
+          ],
+        });
+        return;
       }
       toast({
         text: `${it.kind === 'event' ? 'Terminé' : 'Fait'}${extra}`,

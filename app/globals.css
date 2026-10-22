@@ -923,3 +923,104 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .act-add .btn { flex: none; gap: 6px; }
 .act-add .btn svg { width: 14px; height: 14px; }
 @media (prefers-reduced-motion: reduce) { .card-links .chip.link, .dp-bar i { animation: none; transition: none; } }
+
+/* Menu : domaines et projets repliables */
+.nav-row { display: flex; align-items: center; gap: 2px; padding-left: calc(var(--depth, 0) * 14px); }
+.nav-row > .nav { flex: 1; min-width: 0; }
+.nav-caret { width: 28px; height: 28px; flex: none; border-radius: 10px; display: grid; place-items: center; color: var(--faint); transition: background-color 0.15s, color 0.15s; }
+.nav-caret:hover { background: var(--sky-100); color: var(--ink); }
+.nav-caret svg { width: 14px; height: 14px; transition: transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+.nav-caret.open svg { transform: rotate(90deg); }
+.nav.sub.pinned { padding-left: 26px; }
+
+/* Projets : cartes nuage, épingle, sous-projets repliables, archivés */
+.pcard { cursor: pointer; border-radius: 20px; border: 1.5px solid transparent; padding: 16px;
+  background: linear-gradient(var(--cloud), var(--cloud)) padding-box, linear-gradient(160deg, var(--cloud) 0%, var(--sky-200) 55%, var(--line) 100%) border-box;
+  box-shadow: inset 0 1px 0 var(--cloud), var(--shadow-sm); transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 0.35s ease; }
+.pcard:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
+.pcard.pinned { background: linear-gradient(var(--cloud), var(--cloud)) padding-box, linear-gradient(160deg, var(--sky-300), var(--sky-200) 55%, var(--line)) border-box; }
+.pin-btn { margin-left: auto; width: 28px; height: 28px; flex: none; border-radius: 10px; display: grid; place-items: center; color: var(--faint); opacity: 0; transition: opacity 0.15s, background-color 0.15s, color 0.15s; }
+.pin-btn svg { width: 15px; height: 15px; }
+.pcard:hover .pin-btn, .pin-btn:focus-visible, .pin-btn.on, .vh .pin-btn { opacity: 1; }
+.pin-btn:hover { background: var(--sky-100); color: var(--ink); }
+.pin-btn.on { color: var(--sky-700); }
+.pin-btn.on svg { fill: var(--sky-300); }
+@media (hover: none) { .pin-btn { opacity: 1; } }
+.sub-toggle { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; height: 28px; padding: 0 10px 0 6px; border-radius: 999px; background: var(--sky-100); color: var(--sky-700); font-size: 12.5px; font-weight: 600; }
+.sub-toggle svg { width: 13px; height: 13px; transition: transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+.sub-toggle[aria-expanded='true'] svg { transform: rotate(90deg); }
+.sub-list { display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--line); padding-top: 8px; cursor: default; animation: link-in 0.25s ease-out both; }
+.sub-list.flat { border-top: 0; padding-top: 0; border-radius: 16px; background: var(--cloud); box-shadow: var(--shadow-sm), inset 0 0 0 1.5px var(--sky-100); padding: 6px; }
+.sub-row { display: flex; align-items: center; gap: 6px; min-height: 34px; }
+.sub-row > .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; margin: 0 10px; }
+.sub-row .nav-caret { width: 28px; height: 28px; }
+.sub-name { flex: 1; min-width: 0; text-align: left; font-size: 14px; padding: 6px 8px; border-radius: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub-name:hover { background: var(--sky-50); color: var(--sky-700); }
+.sub-row .mono { font-size: 11.5px; color: var(--faint); padding-right: 8px; }
+button.dom-title { padding: 4px 6px 4px 0; border-radius: 10px; font-size: 15px; }
+button.dom-title:hover { color: var(--sky-700); }
+.dom-title .nav-caret { width: 24px; height: 24px; }
+.dom-title .n { font: 400 12px var(--f-body); color: var(--faint); }
+
+/* Le nuage qui danse : une tâche cochée, et la fête quand tout un projet est fini */
+.dance { position: fixed; z-index: 120; left: 50%; bottom: 96px; transform: translateX(-50%); pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.dance img, .dance .logo-dance { width: 92px; height: 92px; object-fit: contain; filter: drop-shadow(0 12px 22px color-mix(in oklab, var(--sky-700) 30%, transparent)); animation: cloud-dance 1.3s cubic-bezier(0.3, 1.4, 0.5, 1) both; transform-origin: 50% 90%; }
+.dance.big { bottom: 50%; transform: translate(-50%, 50%); }
+.dance.big img, .dance.big .logo-dance { width: 150px; height: 150px; animation: cloud-party 2.6s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
+.dance .dance-text { background: var(--ink); color: var(--cloud); border-radius: 999px; padding: 8px 18px; font-size: 15px; font-weight: 500; box-shadow: var(--shadow-lg); animation: toast-up-plain 0.35s 0.25s ease-out both; white-space: nowrap; }
+.dance .puff { position: absolute; width: 26px; height: 18px; border-radius: 999px; background: var(--sky-200); opacity: 0; animation: puff 1.6s ease-out both; }
+.dance .puff::before { content: ''; position: absolute; width: 14px; height: 14px; border-radius: 50%; background: inherit; left: 4px; top: -7px; }
+@keyframes cloud-dance {
+  0% { transform: translateY(30px) scale(0.4); opacity: 0; }
+  18% { transform: translateY(0) scale(1.05) rotate(-10deg); opacity: 1; }
+  34% { transform: translateY(-14px) rotate(10deg); }
+  50% { transform: translateY(0) rotate(-8deg) scaleX(1.06); }
+  66% { transform: translateY(-10px) rotate(8deg); }
+  82% { transform: translateY(0) rotate(0) scale(1); opacity: 1; }
+  100% { transform: translateY(-24px) scale(0.85); opacity: 0; }
+}
+@keyframes cloud-party {
+  0% { transform: scale(0.2) rotate(-30deg); opacity: 0; }
+  12% { transform: scale(1.1) rotate(8deg); opacity: 1; }
+  22% { transform: translateY(-22px) rotate(-12deg); }
+  32% { transform: translateY(0) rotate(12deg) scaleX(1.08); }
+  42% { transform: translateY(-18px) rotate(-10deg); }
+  52% { transform: translateY(0) rotate(10deg) scaleX(1.08); }
+  62% { transform: translateY(-14px) rotate(-6deg); }
+  74% { transform: translateY(0) rotate(0) scale(1.04); }
+  88% { transform: scale(1); opacity: 1; }
+  100% { transform: translateY(-30px) scale(0.9); opacity: 0; }
+}
+@keyframes puff { 0% { opacity: 0; transform: translate(0, 0) scale(0.4); } 25% { opacity: 0.9; } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.1); } }
+@keyframes toast-up-plain { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .dance img, .dance .logo-dance, .dance.big img, .dance.big .logo-dance { animation: fade-out 1.6s ease both; }
+  .dance .puff { display: none; }
+}
+@keyframes fade-out { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+
+/* Remarques des testeurs */
+.fb { position: relative; flex: none; }
+.fb-btn { gap: 6px; }
+.fb-btn svg { width: 15px; height: 15px; }
+.fb-pop { position: absolute; right: 0; top: calc(100% + 8px); z-index: 95; width: min(360px, calc(100vw - 24px)); display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 22px; border: 1.5px solid transparent;
+  background: linear-gradient(var(--cloud), var(--cloud)) padding-box, linear-gradient(160deg, var(--cloud) 0%, var(--sky-200) 55%, var(--line) 100%) border-box;
+  box-shadow: var(--shadow-lg); animation: qa-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+.fb-pop b { font-size: 15px; font-weight: 600; }
+.fb-pop textarea { resize: vertical; min-height: 96px; }
+.fb-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fb-foot .hint { font-size: 12px; }
+.fb-list { display: flex; flex-direction: column; gap: 10px; max-width: 860px; }
+.fb-item { padding: 16px; border-radius: 20px; background: var(--cloud); box-shadow: var(--shadow-sm), inset 0 0 0 1.5px var(--sky-100); display: flex; flex-direction: column; gap: 8px; }
+.fb-item.done { opacity: 0.6; }
+.fb-item p { margin: 0; white-space: pre-wrap; line-height: 1.5; }
+.fb-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.fb-meta b { color: var(--ink); font-weight: 600; }
+.fb-actions { display: flex; gap: 8px; }
+.fb-actions .btn svg { width: 14px; height: 14px; }
+@media (max-width: 860px) {
+  .fb-btn span { display: none; }
+  .fb-btn { width: 38px; padding: 0; justify-content: center; }
+}
+.nav-caret svg, .pin-btn svg, .sub-toggle svg, .fb-btn svg, .act-link svg, .act-add .btn svg, .fb-actions .btn svg, .dom-title .nav-caret svg { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.pin-btn.on svg { fill: var(--sky-300); }
