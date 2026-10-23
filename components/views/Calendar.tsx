@@ -1030,6 +1030,8 @@ function DayView() {
       <Compass />
       <ProjectLegend />
       <div className="today-grid">
+        {/* L'agenda d'abord, à gauche et large : c'est là qu'on voit sa journée. */}
+        {!narrow && agenda}
         <div className="stack today-main">
           {isToday && <Alerts />}
           {progress}
@@ -1049,7 +1051,6 @@ function DayView() {
           {narrow && agenda}
           <PlanPanel flat />
         </div>
-        {!narrow && agenda}
       </div>
     </>
   );
