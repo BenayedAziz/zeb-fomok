@@ -1,13 +1,15 @@
 'use client';
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useStore } from '@/lib/store';
 import type { Project } from '@/lib/types';
 import { useUI } from '../ui-context';
-import { CardList } from '../Card';
+import { Card, CardList } from '../Card';
+import { ProjMenu } from '../ProjectTree';
 import { Icon } from '../icons';
 import { Head, MonthGrid } from './Calendar';
 import { PinList, AddPin } from './Pins';
-import { PSTATUSES, childrenOf, parentOf, contextsOf, sortItems, backlog, colorOfProject, domainOfProject, domainsSorted, list, projectStats, projectsSorted } from '@/lib/gtd';
+import { PSTATUSES, childrenOf, isOpen, parentOf, contextsOf, sortItems, backlog, colorOfProject, domainOfProject, domainsSorted, list, projectStats, projectsSorted } from '@/lib/gtd';
 import { MONTHS, isoOf, longDate, relDate, todayIso } from '@/lib/dates';
 
 function PCard({ p, all }: { p: Project; all: Project[] }) {
@@ -229,6 +231,8 @@ export function ProjectView() {
   const [ctx, setCtx] = useState('');
   const [kind, setKind] = useState<'task' | 'event'>('task');
   const [showDone, setShowDone] = useState(false);
+  const [showCal, setShowCal] = useState<boolean | null>(null);
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
   const id = ui.projectId;
   const p = id ? data.projects[id] : null;
   if (!p || !id) {
@@ -269,105 +273,139 @@ export function ProjectView() {
     toast({ text: kind === 'event' ? 'Événement ajouté' : 'Carte ajoutée' });
   };
 
+  const pct = st.total ? Math.round((st.done / st.total) * 100) : 0;
+  const dated = list(data.items)
+    .filter((i) => i.projectId === id && isOpen(i) && i.date)
+    .sort(sortItems);
+  const color = colorOfProject(data, p);
+  const calOpen = showCal ?? dated.length + events.length > 0;
+
   return (
     <>
-      <div style={{ marginBottom: 10 }}>
-        {parent ? (
-          <button className="btn ghost sm" onClick={() => go('project', { projectId: parent.id })}>
-            <Icon name="left" />
-            {parent.name}
-          </button>
-        ) : (
-          <button className="btn ghost sm" onClick={() => go('projects')}>
-            <Icon name="left" />
-            Projets
-          </button>
-        )}
-      </div>
-      <Head
-        eyebrow={d ? d.name : 'Projet'}
-        title={p.name}
-        actions={
+      <nav className="crumbs" aria-label="Fil d'Ariane">
+        <button onClick={() => go('projects')}>Projets</button>
+        {d && (
           <>
-            {p.aiSorted && <span className="chip ai">Créé par l&apos;IA</span>}
-            {p.archivedAt && <span className="chip">Archivé</span>}
-            <button
-              className={`icon-btn pin-btn${p.pinned ? ' on' : ''}`}
-              onClick={() => {
-                store.updateProject(id, { pinned: !p.pinned });
-                toast({ text: p.pinned ? 'Retiré des épinglés' : 'Épinglé en haut du menu' });
-              }}
-              aria-label={p.pinned ? 'Désépingler' : 'Épingler'}
-              title={p.pinned ? 'Désépingler' : 'Épingler en haut du menu'}
-            >
-              <Icon name="pin" />
-            </button>
-            <button
-              className="btn"
-              onClick={() => {
-                const archivedAt = p.archivedAt ? null : new Date().toISOString();
-                store.updateProject(id, { archivedAt, pinned: archivedAt ? false : p.pinned });
-                toast({
-                  text: archivedAt ? `${p.name} archivé : il ne s'affiche plus, rien n'est supprimé.` : `${p.name} est de retour`,
-                  actions: archivedAt ? [{ label: 'Annuler', run: () => store.updateProject(id, { archivedAt: null, pinned: p.pinned }) }] : undefined,
-                });
-              }}
-            >
-              {p.archivedAt ? 'Désarchiver' : 'Archiver'}
-            </button>
-            <button className="btn ghost danger" onClick={() => deleteProject(id)}>
-              Supprimer
-            </button>
-            <div className="seg">
+            <span aria-hidden="true">›</span>
+            <button onClick={() => go('projects', { domain: d.id })}>{d.name}</button>
+          </>
+        )}
+        {parent && (
+          <>
+            <span aria-hidden="true">›</span>
+            <button onClick={() => go('project', { projectId: parent.id })}>{parent.name}</button>
+          </>
+        )}
+      </nav>
+
+      <section className="phero" style={{ '--pc': color } as React.CSSProperties}>
+        <div className="phero-top">
+          <h1>{p.name}</h1>
+          <div className="phero-actions">
+            <div className="seg sm" role="group" aria-label="Statut">
               {PSTATUSES.map(([k, l]) => (
                 <button key={k} className={p.status === k ? 'on' : ''} onClick={() => store.updateProject(id, { status: k })}>
                   {l}
                 </button>
               ))}
             </div>
-            <button className="btn" onClick={() => openDrawer({ type: 'project', id })}>
-              Modifier
+            <button className="btn sm" onClick={() => openDrawer({ type: 'project', id })}>
+              <Icon name="edit" />
+              <span className="lbl">Modifier</span>
             </button>
-          </>
-        }
-      />
+            <button
+              className="icon-btn"
+              aria-label="Plus d'actions"
+              title="Épingler, archiver, en faire un domaine, supprimer"
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                setMenuAt(menuAt ? null : { x: r.right - 200, y: r.bottom });
+              }}
+            >
+              <Icon name="more" />
+            </button>
+          </div>
+        </div>
+        <button className={`phero-outcome${p.outcome ? '' : ' missing'}`} onClick={() => openDrawer({ type: 'project', id })} title="Modifier le résultat attendu">
+          {p.outcome || 'Ajoute le résultat attendu : à quoi ressemble « terminé » ?'}
+        </button>
+        {p.description && <p className="phero-desc">{p.description}</p>}
+        <div className="phero-stats">
+          <div className="phero-bar" aria-label={`${pct} % des actions faites`}>
+            <i style={{ width: `${pct}%` }} />
+          </div>
+          <span>
+            <b>{st.done}</b> sur {st.total} action{st.total > 1 ? 's' : ''} faite{st.total > 1 ? 's' : ''}
+          </span>
+          {kids.length > 0 && (
+            <span>
+              {kids.length} sous-projet{kids.length > 1 ? 's' : ''}
+            </span>
+          )}
+          {p.dueDate && <span className={`chip date${p.dueDate < t0 ? ' over' : ''}`}>⚑ {relDate(p.dueDate)}</span>}
+          {g && (
+            <button className="chip" onClick={() => openDrawer({ type: 'goal', id: g.id })}>
+              ◎ {g.title}
+            </button>
+          )}
+          {p.pinned && <span className="chip">Épinglé</span>}
+          {p.archivedAt && <span className="chip">Archivé</span>}
+          {p.aiSorted && <span className="chip ai">IA</span>}
+        </div>
+      </section>
+
       <div className="proj-grid">
         <div className="stack">
-          <form className="sec" onSubmit={addCard}>
-            <div className="sec-head">
-              <h2>Ajouter</h2>
-              <div className="seg sm">
-                <button type="button" className={kind === 'task' ? 'on' : ''} onClick={() => setKind('task')}>
-                  Tâche
-                </button>
-                <button type="button" className={kind === 'event' ? 'on' : ''} onClick={() => setKind('event')}>
-                  Événement
-                </button>
-              </div>
-            </div>
-            <div className="addrow">
-              <label className="sr" htmlFor="padd-title">
-                Titre de la carte
-              </label>
-              <input className="inp" id="padd-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={kind === 'event' ? 'Réunion, rendez-vous, échéance…' : 'Prochaine action pour ce projet…'} />
-              <label className="sr" htmlFor="padd-date">
-                Date
-              </label>
-              <input className="inp" style={{ flex: '0 1 160px' }} type="date" id="padd-date" value={date} onChange={(e) => setDate(e.target.value)} />
-              <button className="btn primary" type="submit">
-                Ajouter
+          <form className="padd" onSubmit={addCard}>
+            <label className="sr" htmlFor="padd-title">
+              {kind === 'event' ? 'Nom de l’événement' : 'Prochaine action'}
+            </label>
+            <input id="padd-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={kind === 'event' ? 'Réunion, rendez-vous, échéance…' : 'Ajoute la prochaine action de ce projet…'} autoComplete="off" />
+            <div className="seg sm" role="group" aria-label="Type">
+              <button type="button" className={kind === 'task' ? 'on' : ''} onClick={() => setKind('task')}>
+                Tâche
+              </button>
+              <button type="button" className={kind === 'event' ? 'on' : ''} onClick={() => setKind('event')}>
+                Événement
               </button>
             </div>
-            {kind === 'task' && data.settings.showContexts && (
-              <div className="pick">
-                {contextsOf(data.settings).map(([k, l]) => (
-                  <button type="button" key={k} className={ctx === k ? 'on' : ''} onClick={() => setCtx(ctx === k ? '' : k)}>
-                    {l}
-                  </button>
+            <label className="sr" htmlFor="padd-date">
+              Date
+            </label>
+            <input className="padd-date" type="date" id="padd-date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <button className="btn primary sm" type="submit" disabled={!title.trim()}>
+              Ajouter
+            </button>
+          </form>
+          {kind === 'task' && data.settings.showContexts && title.trim() && (
+            <div className="pick">
+              {contextsOf(data.settings).map(([k, l]) => (
+                <button type="button" key={k} className={ctx === k ? 'on' : ''} onClick={() => setCtx(ctx === k ? '' : k)}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="sec" data-drop="backlog">
+            <div className="sec-head">
+              <h2>
+                Prochaines actions <span className="n">{dated.length + nodate.length}</span>
+              </h2>
+            </div>
+            {dated.length + nodate.length ? (
+              <div className="cards">
+                {[...dated, ...nodate].map((i) => (
+                  <Card key={i.id} it={i} o={{ noProject: true }} />
                 ))}
               </div>
+            ) : (
+              <div className="empty">
+                <b>Aucune prochaine action.</b> En GTD, un projet actif a toujours au moins une action concrète à faire. Ajoute-la juste au-dessus.
+              </div>
             )}
-          </form>
+          </div>
+
           <div className="sec">
             <div className="sec-head">
               <h2>
@@ -379,53 +417,30 @@ export function ProjectView() {
               </button>
             </div>
             {kids.length > 0 && (
-              <div className="sub-list flat">
-                {kids.map((k) => (
-                  <SubRow key={k.id} p={k} all={projectsSorted(data)} depth={0} />
-                ))}
+              <div className="kid-grid">
+                {kids.map((k) => {
+                  const ks = projectStats(data, k.id);
+                  const kp = ks.total ? Math.round((ks.done / ks.total) * 100) : 0;
+                  return (
+                    <button key={k.id} className="kid" style={{ '--pc': colorOfProject(data, k) } as React.CSSProperties} onClick={() => go('project', { projectId: k.id })}>
+                      <span className="kid-name">
+                        <i className="dot" />
+                        {k.name}
+                      </span>
+                      <span className="kid-next">{ks.next ? ks.next.title : 'Aucune prochaine action'}</span>
+                      <span className="kid-bar">
+                        <i style={{ width: `${kp}%` }} />
+                      </span>
+                      <span className="kid-n">
+                        {ks.done}/{ks.total}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
-          <div className="sec">
-            <div className="sec-head">
-              <h2>Calendrier du projet</h2>
-              <div className="cal-nav">
-                <button className="icon-btn" onClick={() => shiftMonth(-1)} aria-label="Mois précédent">
-                  <Icon name="left" />
-                </button>
-                <span className="cal-title">
-                  {MONTHS[m - 1]} {y}
-                </span>
-                <button className="icon-btn" onClick={() => shiftMonth(1)} aria-label="Mois suivant">
-                  <Icon name="right" />
-                </button>
-              </div>
-            </div>
-            <MonthGrid ym={month} projectId={id} compact />
-          </div>
-          <div className="sec" data-drop="backlog">
-            <div className="sec-head">
-              <h2>
-                Cartes sans date <span className="n">{nodate.length}</span>
-              </h2>
-              <span className="hint">Glisse-les sur le calendrier</span>
-            </div>
-            <CardList
-              items={nodate}
-              o={{ noProject: true }}
-              empty={
-                <div className="empty">
-                  {st.open.length ? (
-                    'Toutes les cartes ouvertes ont une date.'
-                  ) : (
-                    <>
-                      <b>Aucune prochaine action.</b> En GTD, un projet actif a toujours au moins une action concrète à faire. Ajoute-la au-dessus.
-                    </>
-                  )}
-                </div>
-              }
-            />
-          </div>
+
           {events.length > 0 && (
             <div className="sec">
               <div className="sec-head">
@@ -459,43 +474,33 @@ export function ProjectView() {
               {showDone && <CardList items={done} o={{ noProject: true, drag: false }} />}
             </div>
           )}
+
+          <div className="sec">
+            <div className="sec-head">
+              <h2>Calendrier du projet</h2>
+              <div className="cal-nav">
+                {calOpen && (
+                  <>
+                    <button className="icon-btn" onClick={() => shiftMonth(-1)} aria-label="Mois précédent">
+                      <Icon name="left" />
+                    </button>
+                    <span className="cal-title">
+                      {MONTHS[m - 1]} {y}
+                    </span>
+                    <button className="icon-btn" onClick={() => shiftMonth(1)} aria-label="Mois suivant">
+                      <Icon name="right" />
+                    </button>
+                  </>
+                )}
+                <button className="btn ghost sm" onClick={() => setShowCal(!calOpen)}>
+                  {calOpen ? 'Masquer' : 'Afficher'}
+                </button>
+              </div>
+            </div>
+            {calOpen && <MonthGrid ym={month} projectId={id} compact />}
+          </div>
         </div>
         <div className="stack">
-          <div className="info">
-            <h2>Infos générales</h2>
-            <dl className="kv">
-              <dt>Résultat attendu</dt>
-              <dd>{p.outcome || <span style={{ color: 'var(--warn)' }}>À définir : à quoi ressemble « terminé » ?</span>}</dd>
-              <dt>Domaine</dt>
-              <dd>
-                {d ? (
-                  <span className="chip">
-                    <i className="dot" style={{ background: `var(--${d.color})` }} />
-                    <span>{d.name}</span>
-                  </span>
-                ) : (
-                  '—'
-                )}
-              </dd>
-              <dt>Objectif</dt>
-              <dd>
-                {g ? (
-                  <button className="btn ghost sm" style={{ height: 'auto', padding: '2px 6px', whiteSpace: 'normal', textAlign: 'left' }} onClick={() => openDrawer({ type: 'goal', id: g.id })}>
-                    ◎ {g.title}
-                  </button>
-                ) : (
-                  '—'
-                )}
-              </dd>
-              <dt>Échéance</dt>
-              <dd>{p.dueDate ? longDate(p.dueDate) : '—'}</dd>
-              <dt>Avancement</dt>
-              <dd className="mono">
-                {st.done}/{st.total}
-              </dd>
-            </dl>
-            {p.description && <p style={{ margin: 0, color: 'var(--muted)', fontSize: 13, whiteSpace: 'pre-wrap' }}>{p.description}</p>}
-          </div>
           <div className="info">
             <label className="fld">
               <span style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 13 }}>Notes</span>
@@ -532,6 +537,7 @@ export function ProjectView() {
           </div>
         </div>
       </div>
+      {menuAt && createPortal(<ProjMenu p={p} at={menuAt} onClose={() => setMenuAt(null)} />, document.body)}
     </>
   );
 }

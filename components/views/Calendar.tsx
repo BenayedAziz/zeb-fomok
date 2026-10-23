@@ -11,7 +11,7 @@ import {
 } from '@/lib/gtd';
 import { DAYS, DSHORT, MONTHS, MSHORT, addDays, isoOf, isoWeek, minutesOf, mondayOf, pad, parseIso, relDate, timeOf, timeRange, todayIso } from '@/lib/dates';
 
-export const HOUR_PX = 52;
+export const HOUR_PX = 60;
 const SNAP = 15;
 const snap = (m: number) => Math.round(m / SNAP) * SNAP;
 
@@ -278,6 +278,9 @@ function layout(entries: Entry[]): Placed[] {
     .sort((a, b) => a.start - b.start || b.end - a.end);
   const bgs = all.filter((p) => isEvent(p.e.it) && p.end - p.start >= BG_MIN).map((p) => ({ ...p, bg: true }));
   const items = all.filter((p) => !(isEvent(p.e.it) && p.end - p.start >= BG_MIN));
+  // Un bloc court s'affiche avec une hauteur minimale lisible : on en tient compte pour ne pas les superposer.
+  const MIN_VIS = Math.ceil((26 / HOUR_PX) * 60);
+  const vend = (p: Placed) => Math.max(p.end, p.start + MIN_VIS);
   let cluster: Placed[] = [];
   let clusterEnd = -1;
   const lanesEnd: number[] = [];
@@ -291,10 +294,10 @@ function layout(entries: Entry[]): Placed[] {
     if (p.start >= clusterEnd && cluster.length) flush();
     let lane = lanesEnd.findIndex((end) => end <= p.start);
     if (lane === -1) lane = lanesEnd.length;
-    lanesEnd[lane] = p.end;
+    lanesEnd[lane] = vend(p);
     p.lane = lane;
     cluster.push(p);
-    clusterEnd = Math.max(clusterEnd, p.end);
+    clusterEnd = Math.max(clusterEnd, vend(p));
   }
   if (cluster.length) flush();
   items.forEach((p) => (p.inset = bgs.some((b) => p.start < b.end && p.end > b.start)));
@@ -319,7 +322,7 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
   const start = drag?.mode === 'move' ? snap(p.start + dyMin) : p.start;
   const dur = drag?.mode === 'resize' ? Math.max(SNAP, snap(p.end - p.start + dyMin)) : p.end - p.start;
   const top = ((start - dayStart * 60) / 60) * HOUR_PX;
-  const height = Math.max((dur / 60) * HOUR_PX - 2, 18);
+  const height = Math.max((dur / 60) * HOUR_PX - 2, 24);
 
   const begin = (mode: 'move' | 'resize') => (e: React.PointerEvent) => {
     if (ghost || e.button !== 0) return;
@@ -374,8 +377,8 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
       style={{
         top,
         height,
-        left: p.bg ? 2 : `calc(${(p.lane / p.lanes) * 100}% + ${p.inset ? 16 : 2}px)`,
-        width: p.bg ? 'calc(100% - 4px)' : `calc(${100 / p.lanes}% - ${p.inset ? 20 : 4}px)`,
+        left: p.bg ? 2 : `calc(${(p.lane / p.lanes) * 100}% + ${p.inset ? 26 : 2}px)`,
+        width: p.bg ? 'calc(100% - 4px)' : `calc(${100 / p.lanes}% - ${p.inset ? 30 : 4}px)`,
         transform: drag?.dx ? `translateX(${drag.dx}px)` : undefined,
         '--pc': colorOfItem(store.data, it),
       } as React.CSSProperties}
@@ -398,35 +401,47 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
       onKeyDown={(e) => e.key === 'Enter' && openDrawer({ type: 'item', id: it.id })}
       title={ghost ? 'Répétition à venir' : undefined}
     >
-      <div className="tb-row">
-        {!ghost && (
-          <button
-            className={`ck sm${ev ? ' ev' : ''}`}
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleDone(it.id);
-            }}
-            aria-label={it.status === 'done' ? 'Décocher' : ev ? 'Marquer terminé' : 'Marquer fait'}
-          >
-            <Icon name="check" />
-          </button>
-        )}
-        <b>{it.title}</b>
-      </div>
-      {height > 30 && (
-        <span className="tb-time">
-          {timeOf(start)}–{timeOf(start + dur)}
-          {it.projectId && store.data.projects[it.projectId] ? ` · ${store.data.projects[it.projectId].name}` : ''}
-          {it.recurrence ? ' · ↻' : ''}
+      {p.bg ? (
+        // Bloc de présence : son nom court le long du bord gauche, les tâches de ce travail se posent à côté.
+        <span className="bg-label" title={`${it.title}, ${timeOf(start)}–${timeOf(start + dur)}`}>
+          <b>{it.title}</b>
+          <span>
+            {timeOf(start)}–{timeOf(start + dur)}
+          </span>
         </span>
+      ) : (
+        <>
+          <div className="tb-row">
+            {!ghost && (
+              <button
+                className={`ck sm${ev ? ' ev' : ''}`}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleDone(it.id);
+                }}
+                aria-label={it.status === 'done' ? 'Décocher' : ev ? 'Marquer terminé' : 'Marquer fait'}
+              >
+                <Icon name="check" />
+              </button>
+            )}
+            <b>{it.title}</b>
+          </div>
+          {height > 30 && (
+            <span className="tb-time">
+              {timeOf(start)}–{timeOf(start + dur)}
+              {it.projectId && store.data.projects[it.projectId] ? ` · ${store.data.projects[it.projectId].name}` : ''}
+              {it.recurrence ? ' · ↻' : ''}
+            </span>
+          )}
+          {height > 70 && !ghost && it.status !== 'done' && store.data.settings.showMascots !== false && (() => {
+            const pj = it.projectId ? store.data.projects[it.projectId] : null;
+            const dn = (pj?.domainId ? store.data.domains[pj.domainId]?.name : null) || (it.domainId ? store.data.domains[it.domainId]?.name : null);
+            const m = mascotFor(it.title, dn);
+            return m ? <img className="mascot" src={m.src} alt="" title={m.name} width={34} height={34} draggable={false} /> : null;
+          })()}
+        </>
       )}
-      {height > 44 && !ghost && it.status !== 'done' && store.data.settings.showMascots !== false && (() => {
-        const pj = it.projectId ? store.data.projects[it.projectId] : null;
-        const dn = (pj?.domainId ? store.data.domains[pj.domainId]?.name : null) || (it.domainId ? store.data.domains[it.domainId]?.name : null);
-        const m = mascotFor(it.title, dn);
-        return m ? <img className="mascot" src={m.src} alt="" title={m.name} width={34} height={34} draggable={false} /> : null;
-      })()}
       {!ghost && <span className="tb-handle" onPointerDown={begin('resize')} aria-label="Changer la durée" title="Glisser pour changer la durée" />}
     </div>
   );
@@ -645,7 +660,9 @@ function PlanButton({ date, n, sm }: { date: string; n: number; sm?: boolean }) 
 /** Ce qui reste à placer pour un jour donné : sans date, prévu ce jour sans heure, en retard. */
 function toPlanCount(data: ReturnType<typeof useStore>['data'], date: string) {
   const t = todayIso();
-  return list(data.items).filter((it) => isOpen(it) && !it.time && (!it.date || it.date === date || (it.date < t && date >= t))).length;
+  const nowM = new Date().getHours() * 60 + new Date().getMinutes();
+  const missed = (it: Item) => date === t && it.date === t && !!it.time && minutesOf(it.time) + (it.duration || 30) <= nowM;
+  return list(data.items).filter((it) => isOpen(it) && ((!it.time && (!it.date || it.date === date || (it.date < t && date >= t))) || missed(it))).length;
 }
 
 type DayTab = 'day' | 'agenda' | 'plan';
