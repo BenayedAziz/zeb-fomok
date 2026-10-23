@@ -1287,3 +1287,62 @@ button.dom-title:hover { color: var(--sky-700); }
 @media (prefers-reduced-motion: reduce) { .sp-card img, .sp-opt.on::after { animation: none; } }
 /* Le bleu ciel reste clair en mode sombre : texte toujours foncé dessus (contraste) */
 .btn.primary, .btn.primary:hover:not(:disabled), .chip.ai { color: #142133; }
+
+/* Agenda au doigt : on défile librement, l'appui long attrape un bloc ou ouvre un créneau */
+.tl, .tblock { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.tblock { touch-action: pan-x pan-y; }
+.tb-handle { touch-action: pan-x pan-y; }
+.tblock.held { z-index: 6; transform-origin: center; box-shadow: var(--shadow-lg), inset 0 0 0 2px var(--sky-500); animation: lift 0.22s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+@keyframes lift { from { scale: 1; } 60% { scale: 1.05; } to { scale: 1.03; } }
+.on-touch { display: none; }
+@media (hover: none) and (pointer: coarse) {
+  .on-touch { display: inline; }
+  .on-mouse { display: none; }
+  .tb-handle { height: 14px; }
+}
+@media (prefers-reduced-motion: reduce) { .tblock.held { animation: none; } }
+
+/* Bloc de présence (journée de travail…) : bandeau de fond, les tâches de ce travail se posent dessus */
+.tblock.bg, .tblock.event.bg { z-index: 1; color: var(--sky-700); box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--sky-500) 35%, transparent);
+  background: repeating-linear-gradient(-45deg, color-mix(in oklab, var(--sky-200) 55%, transparent) 0 10px, color-mix(in oklab, var(--sky-200) 38%, transparent) 10px 20px); }
+.tblock.bg:hover { box-shadow: inset 0 0 0 1.5px var(--sky-500); }
+.tblock.bg::before { top: 0; bottom: 0; width: 4px; border-radius: 12px 0 0 12px; }
+.tblock.bg .tb-row b { font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
+.tblock.bg .mascot { top: 6px; bottom: auto; opacity: 0.85; }
+.tblock.bg.dragging, .tblock.bg.held { z-index: 4; }
+.tblock:not(.bg) { z-index: 3; }
+.tblock.dragging:not(.bg), .tblock.held:not(.bg) { z-index: 6; }
+
+/* Planifier avec l'IA */
+.plan-btn { gap: 8px; }
+.plan-btn svg { width: 16px; height: 16px; fill: currentColor; stroke: none; flex: none; }
+.plan-hint { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 12px 10px 14px; border-radius: 18px; background: var(--sky-100); color: var(--ink); font-size: 14px; }
+
+/* Téléphone : barre de calendrier collante (jours, Jour/Semaine/Mois, onglets) */
+.mcal-bar { position: sticky; top: var(--top-h, 51px); z-index: 15; margin: -18px -16px 14px; padding: 8px 12px 6px; display: flex; flex-direction: column; gap: 6px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+.mcal-row { display: flex; align-items: center; gap: 2px; }
+.mcal-label { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; padding: 0 6px; font-size: 17px; font-weight: 600; text-align: left; white-space: nowrap; overflow: hidden; }
+.mcal-label::first-letter { text-transform: uppercase; }
+.mcal-today { font-size: 12px; font-weight: 600; color: var(--sky-700); }
+.mcal-seg { padding: 2px; }
+.mcal-seg button { width: 34px; height: 30px; padding: 0; font-weight: 600; }
+.mcal-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.mcal-week button { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 4px 0 5px; border-radius: 14px; color: var(--muted); }
+.mcal-week small { font-size: 11px; text-transform: capitalize; }
+.mcal-week b { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; font-size: 15px; font-weight: 500; color: var(--ink); }
+.mcal-week button.today b { color: var(--sky-700); font-weight: 700; box-shadow: inset 0 0 0 1.5px var(--sky-300); }
+.mcal-week button.on b { background: var(--sky-300); color: #142133; font-weight: 700; box-shadow: var(--shadow-sm); }
+.mcal-week .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--sky-500); }
+.mcal-week .dot.none { background: transparent; }
+.mcal-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 3px; border-radius: 16px; background: var(--sky-100); }
+.mcal-tabs button { display: flex; align-items: center; justify-content: center; gap: 6px; height: 34px; border-radius: 13px; font-size: 14px; font-weight: 500; color: var(--muted); }
+.mcal-tabs button.on { background: var(--cloud); color: var(--ink); font-weight: 600; box-shadow: var(--shadow-sm); }
+.mcal-tabs .n { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--sky-300); color: #142133; font-size: 11.5px; font-weight: 700; display: inline-grid; place-items: center; }
+.mday .agenda-panel { position: static; max-height: none; padding: 12px 8px 8px; }
+.mday .ap-scroll { max-height: calc(100dvh - 300px); min-height: 360px; }
+.mday .card .time { font-weight: 600; color: var(--sky-700); }
+@media (max-width: 860px) {
+  :root { --top-h: 51px; }
+  .day-head, .vh:has(.cal-nav) { display: none; }
+}

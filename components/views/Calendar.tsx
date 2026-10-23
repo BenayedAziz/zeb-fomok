@@ -7,13 +7,56 @@ import { Card, GroupedByProject } from '../Card';
 import { Icon } from '../icons';
 import { mascotFor } from '@/lib/mascots';
 import {
-  backlog, guessContext, colorOfItem, colorOfProject, contextsOf, counts, goalsSorted, isEvent, list, overdue, projectsSorted, reviewDue, lastReviewDays, entriesOn, type Entry,
+  backlog, guessContext, isOpen, colorOfItem, colorOfProject, contextsOf, counts, goalsSorted, isEvent, list, overdue, projectsSorted, reviewDue, lastReviewDays, entriesOn, type Entry,
 } from '@/lib/gtd';
 import { DAYS, DSHORT, MONTHS, MSHORT, addDays, isoOf, isoWeek, minutesOf, mondayOf, pad, parseIso, relDate, timeOf, timeRange, todayIso } from '@/lib/dates';
 
 export const HOUR_PX = 52;
 const SNAP = 15;
 const snap = (m: number) => Math.round(m / SNAP) * SNAP;
+
+/* Au doigt, l'agenda doit d'abord défiler : une action ne part qu'après un appui maintenu, sans bouger. */
+const HOLD_MS = 450;
+const SLOP = 10;
+function useHold() {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const from = useRef<{ x: number; y: number } | null>(null);
+  const cancel = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    from.current = null;
+  };
+  const arm = (x: number, y: number, fire: () => void) => {
+    cancel();
+    from.current = { x, y };
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      try {
+        navigator.vibrate?.(15); // petit retour : « c'est attrapé »
+      } catch {}
+      fire();
+    }, HOLD_MS);
+  };
+  /** Le doigt bouge avant la fin de l'appui : c'est un défilement, on laisse faire. */
+  const check = (x: number, y: number) => {
+    if (timer.current && from.current && Math.hypot(x - from.current.x, y - from.current.y) > SLOP) cancel();
+  };
+  useEffect(() => cancel, []);
+  return { arm, check, cancel };
+}
+
+/** Bloque le défilement de la page tant qu'on déplace quelque chose au doigt. */
+function useNoScroll(ref: React.RefObject<HTMLElement | null>, active: boolean) {
+  const on = useRef(active);
+  on.current = active;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const stop = (e: TouchEvent) => on.current && e.cancelable && e.preventDefault();
+    el.addEventListener('touchmove', stop, { passive: false });
+    return () => el.removeEventListener('touchmove', stop);
+  }, [ref]);
+}
 
 export function Head({ eyebrow, title, lede, actions }: { eyebrow: string; title: React.ReactNode; lede?: React.ReactNode; actions?: React.ReactNode }) {
   return (
@@ -218,15 +261,23 @@ interface Placed {
   end: number;
   lane: number;
   lanes: number;
+  /** Bloc de présence (journée de travail, journée sur site) : en fond, pleine largeur. */
+  bg?: boolean;
+  /** Posé sur un bloc de présence : un peu décalé pour laisser voir le fond. */
+  inset?: boolean;
 }
+/** Un événement de 3 h ou plus est un lieu où l'on est, pas une indisponibilité : les tâches s'y posent. */
+const BG_MIN = 180;
 function layout(entries: Entry[]): Placed[] {
-  const items = entries
+  const all: Placed[] = entries
     .map((e) => {
       const start = minutesOf(e.it.time!);
       const dur = e.it.duration || (isEvent(e.it) ? 60 : 30);
       return { e, start, end: start + Math.max(dur, 15), lane: 0, lanes: 1 };
     })
     .sort((a, b) => a.start - b.start || b.end - a.end);
+  const bgs = all.filter((p) => isEvent(p.e.it) && p.end - p.start >= BG_MIN).map((p) => ({ ...p, bg: true }));
+  const items = all.filter((p) => !(isEvent(p.e.it) && p.end - p.start >= BG_MIN));
   let cluster: Placed[] = [];
   let clusterEnd = -1;
   const lanesEnd: number[] = [];
@@ -246,7 +297,8 @@ function layout(entries: Entry[]): Placed[] {
     clusterEnd = Math.max(clusterEnd, p.end);
   }
   if (cluster.length) flush();
-  return items;
+  items.forEach((p) => (p.inset = bgs.some((b) => p.start < b.end && p.end > b.start)));
+  return [...bgs, ...items];
 }
 
 function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
@@ -257,6 +309,11 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
   const ev = isEvent(it);
   const [drag, setDrag] = useState<{ mode: 'move' | 'resize'; x0: number; y0: number; dx: number; dy: number } | null>(null);
   const moved = useRef(false);
+  /** Attrapé au doigt par un appui long : le relâcher sans bouger n'ouvre pas la fiche. */
+  const held = useRef(false);
+  const el = useRef<HTMLDivElement>(null);
+  const hold = useHold();
+  useNoScroll(el, !!drag);
 
   const dyMin = drag ? (drag.dy / HOUR_PX) * 60 : 0;
   const start = drag?.mode === 'move' ? snap(p.start + dyMin) : p.start;
@@ -267,11 +324,21 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
   const begin = (mode: 'move' | 'resize') => (e: React.PointerEvent) => {
     if (ghost || e.button !== 0) return;
     e.stopPropagation();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     moved.current = false;
-    setDrag({ mode, x0: e.clientX, y0: e.clientY, dx: 0, dy: 0 });
+    held.current = false;
+    const { clientX: x0, clientY: y0 } = e;
+    if (e.pointerType === 'touch') {
+      hold.arm(x0, y0, () => {
+        held.current = true;
+        setDrag({ mode, x0, y0, dx: 0, dy: 0 });
+      });
+      return;
+    }
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setDrag({ mode, x0, y0, dx: 0, dy: 0 });
   };
   const move = (e: React.PointerEvent) => {
+    hold.check(e.clientX, e.clientY);
     if (!drag) return;
     const dy = e.clientY - drag.y0;
     const dx = drag.mode === 'move' ? e.clientX - drag.x0 : 0;
@@ -279,6 +346,7 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
     setDrag({ ...drag, dx, dy });
   };
   const end = (e: React.PointerEvent) => {
+    hold.cancel();
     if (!drag) return;
     if (moved.current) {
       if (drag.mode === 'move') {
@@ -301,15 +369,28 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
 
   return (
     <div
-      className={`tblock${ev ? ' event' : ''}${ghost ? ' ghost' : ''}${it.status === 'done' ? ' done' : ''}${drag ? ' dragging' : ''}${ui.justDone[it.id] ? ' just-done' : ''}`}
-      style={{ top, height, left: `calc(${(p.lane / p.lanes) * 100}% + 2px)`, width: `calc(${100 / p.lanes}% - 4px)`, transform: drag?.dx ? `translateX(${drag.dx}px)` : undefined, '--pc': colorOfItem(store.data, it) } as React.CSSProperties}
+      ref={el}
+      className={`tblock${ev ? ' event' : ''}${p.bg ? ' bg' : ''}${ghost ? ' ghost' : ''}${it.status === 'done' ? ' done' : ''}${drag ? ' dragging' : ''}${drag && held.current ? ' held' : ''}${ui.justDone[it.id] ? ' just-done' : ''}`}
+      style={{
+        top,
+        height,
+        left: p.bg ? 2 : `calc(${(p.lane / p.lanes) * 100}% + ${p.inset ? 16 : 2}px)`,
+        width: p.bg ? 'calc(100% - 4px)' : `calc(${100 / p.lanes}% - ${p.inset ? 20 : 4}px)`,
+        transform: drag?.dx ? `translateX(${drag.dx}px)` : undefined,
+        '--pc': colorOfItem(store.data, it),
+      } as React.CSSProperties}
       onPointerDown={begin('move')}
       onPointerMove={move}
       onPointerUp={end}
-      onPointerCancel={() => setDrag(null)}
+      onPointerCancel={() => {
+        hold.cancel();
+        setDrag(null);
+      }}
+      onContextMenu={(e) => e.preventDefault()}
       onClick={(e) => {
         e.stopPropagation();
-        if (!moved.current) openDrawer({ type: 'item', id: it.id });
+        if (!moved.current && !held.current) openDrawer({ type: 'item', id: it.id });
+        held.current = false;
       }}
       role="button"
       tabIndex={0}
@@ -428,6 +509,9 @@ function Timeline({ date, entries, showHours, nowLine }: { date: string; entries
   const { data } = useStore();
   const [draft, setDraft] = useState<Draft | null>(null);
   const draftEl = useRef<HTMLDivElement>(null);
+  const tlEl = useRef<HTMLDivElement>(null);
+  const hold = useHold();
+  useNoScroll(tlEl, !!draft?.drawing);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const { dayStart, dayEnd } = data.settings;
   const hours = Array.from({ length: dayEnd - dayStart + 1 }, (_, i) => dayStart + i);
@@ -447,6 +531,7 @@ function Timeline({ date, entries, showHours, nowLine }: { date: string; entries
         </div>
       )}
       <div
+        ref={tlEl}
         className="tl"
         style={{ height: hours.length * HOUR_PX }}
         data-drop="timeline"
@@ -457,23 +542,29 @@ function Timeline({ date, entries, showHours, nowLine }: { date: string; entries
           if (e.target !== e.currentTarget || e.button !== 0) return;
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
           const min = Math.floor((dayStart * 60 + ((e.clientY - rect.top) / HOUR_PX) * 60) / SNAP) * SNAP;
-          setAnchor(null);
           if (e.pointerType === 'touch') {
-            // Au doigt, on garde le défilement : un appui ouvre directement une heure.
-            setDraft({ a: min, b: min + 60, drawing: false });
-            requestAnimationFrame(() => draftEl.current && setAnchor(draftEl.current.getBoundingClientRect()));
+            // Au doigt : glisser fait défiler. Un appui long ouvre un créneau d'une heure, qu'on peut étirer avant de lâcher.
+            hold.arm(e.clientX, e.clientY, () => {
+              setAnchor(null);
+              setDraft({ a: min, b: min + 60, drawing: true });
+            });
             return;
           }
+          setAnchor(null);
           (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
           setDraft({ a: min, b: min + SNAP, drawing: true });
         }}
         onPointerMove={(e) => {
+          hold.check(e.clientX, e.clientY);
           if (!draft?.drawing) return;
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
           const min = Math.max(dayStart * 60, Math.min((dayEnd + 1) * 60, snap(dayStart * 60 + ((e.clientY - rect.top) / HOUR_PX) * 60)));
           setDraft({ ...draft, b: min });
         }}
+        onPointerCancel={() => hold.cancel()}
+        onContextMenu={(e) => e.preventDefault()}
         onPointerUp={() => {
+          hold.cancel();
           if (!draft?.drawing) return;
           let a = Math.min(draft.a, draft.b);
           let b = Math.max(draft.a, draft.b);
@@ -482,7 +573,7 @@ function Timeline({ date, entries, showHours, nowLine }: { date: string; entries
           setDraft({ a, b, drawing: false });
           requestAnimationFrame(() => draftEl.current && setAnchor(draftEl.current.getBoundingClientRect()));
         }}
-        title="Glisse sur l'agenda pour ajouter quelque chose"
+        title="Glisse sur l'agenda pour ajouter quelque chose (appui long au doigt)"
       >
         {hours.map((h) => (
           <div key={h} className="tl-line" style={{ top: (h - dayStart) * HOUR_PX }} />
@@ -538,10 +629,136 @@ function AllDay({ entries }: { entries: Entry[] }) {
 
 const projFilter = (pid: string | null) => (pid ? (it: Item) => it.projectId === pid : undefined);
 
+/** Bouton « Planifier ma journée » : l'IA place les tâches à planifier dans les créneaux libres. */
+function PlanButton({ date, n, sm }: { date: string; n: number; sm?: boolean }) {
+  const { ui, planDay } = useUI();
+  const busy = ui.planning === date;
+  if (!n && !busy) return null;
+  return (
+    <button className={`btn primary plan-btn${sm ? ' sm' : ''}`} onClick={() => planDay(date)} disabled={!!ui.planning || ui.aiOff}>
+      {busy ? <i className="spin" /> : <Icon name="sparkle" />}
+      {busy ? 'Je planifie…' : `Planifier ${date === todayIso() ? 'ma journée' : 'ce jour'}`}
+    </button>
+  );
+}
+
+/** Ce qui reste à placer pour un jour donné : sans date, prévu ce jour sans heure, en retard. */
+function toPlanCount(data: ReturnType<typeof useStore>['data'], date: string) {
+  const t = todayIso();
+  return list(data.items).filter((it) => isOpen(it) && !it.time && (!it.date || it.date === date || (it.date < t && date >= t))).length;
+}
+
+type DayTab = 'day' | 'agenda' | 'plan';
+
+/** Téléphone : barre collante avec les jours de la semaine et le choix Jour / Semaine / Mois. */
+function MobileCalBar({ tabs }: { tabs?: { tab: DayTab; setTab: (t: DayTab) => void; nDay: number; nPlan: number } }) {
+  const { data } = useStore();
+  const { ui, set } = useUI();
+  const t = todayIso();
+  const m = mondayOf(ui.date);
+  const days = Array.from({ length: 7 }, (_, i) => addDays(m, i));
+  const dd = parseIso(ui.date);
+  const shift = (dir: number) => {
+    if (ui.cal === 'day') set({ date: addDays(ui.date, 7 * dir) });
+    else if (ui.cal === 'week') set({ date: addDays(ui.date, 7 * dir) });
+    else set({ date: isoOf(new Date(dd.getFullYear(), dd.getMonth() + dir, 1)) });
+  };
+  const label =
+    ui.cal === 'month'
+      ? `${MONTHS[dd.getMonth()]} ${dd.getFullYear()}`
+      : ui.cal === 'week'
+        ? `Semaine ${isoWeek(ui.date)}`
+        : ui.date === t
+          ? "Aujourd'hui"
+          : `${DAYS[dd.getDay()]} ${dd.getDate()} ${MSHORT[dd.getMonth()]}`;
+  return (
+    <div className="mcal-bar">
+      <div className="mcal-row">
+        <button className="icon-btn" onClick={() => shift(-1)} aria-label={ui.cal === 'month' ? 'Mois précédent' : 'Semaine précédente'}>
+          <Icon name="left" />
+        </button>
+        <button className="mcal-label" onClick={() => set({ date: t })} title="Revenir à aujourd'hui">
+          {label}
+          {ui.date !== t && <span className="mcal-today">Aujourd&apos;hui</span>}
+        </button>
+        <button className="icon-btn" onClick={() => shift(1)} aria-label={ui.cal === 'month' ? 'Mois suivant' : 'Semaine suivante'}>
+          <Icon name="right" />
+        </button>
+        <div className="seg mcal-seg" role="group" aria-label="Affichage">
+          {(
+            [
+              ['day', 'J', 'Jour'],
+              ['week', 'S', 'Semaine'],
+              ['month', 'M', 'Mois'],
+            ] as [CalMode, string, string][]
+          ).map(([k, s, l]) => (
+            <button key={k} className={ui.cal === k ? 'on' : ''} onClick={() => set({ cal: k })} aria-label={l} title={l}>
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+      {ui.cal !== 'month' && (
+        <div className="mcal-week" role="group" aria-label="Jours de la semaine">
+          {days.map((d) => {
+            const x = parseIso(d);
+            const n = entriesOn(data, d).filter((e) => e.it.status !== 'done').length;
+            return (
+              <button key={d} className={`${d === ui.date && ui.cal === 'day' ? 'on' : ''}${d === t ? ' today' : ''}`} onClick={() => set({ date: d, cal: 'day' })} aria-label={`${DAYS[x.getDay()]} ${x.getDate()}`}>
+                <small>{DSHORT[x.getDay()].slice(0, 3)}</small>
+                <b>{x.getDate()}</b>
+                <i className={n ? 'dot' : 'dot none'} />
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {tabs && ui.cal === 'day' && (
+        <div className="mcal-tabs" role="tablist">
+          {(
+            [
+              ['day', 'Journée', tabs.nDay],
+              ['agenda', 'Agenda', 0],
+              ['plan', 'À planifier', tabs.nPlan],
+            ] as [DayTab, string, number][]
+          ).map(([k, l, n]) => (
+            <button key={k} role="tab" aria-selected={tabs.tab === k} className={tabs.tab === k ? 'on' : ''} onClick={() => tabs.setTab(k)}>
+              {l}
+              {n ? <span className="n">{n}</span> : null}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function useDayTab(): [DayTab, (t: DayTab) => void] {
+  const [tab, setTab] = useState<DayTab>('day');
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('sc-day-tab');
+      if (v === 'day' || v === 'agenda' || v === 'plan') setTab(v);
+    } catch {}
+  }, []);
+  return [
+    tab,
+    (t) => {
+      setTab(t);
+      try {
+        localStorage.setItem('sc-day-tab', t);
+      } catch {}
+      document.querySelector('.work')?.scrollTo({ top: 0 });
+    },
+  ];
+}
+
 function DayView() {
   const { data } = useStore();
   const { ui } = useUI();
   const narrow = useNarrow(1100);
+  const phone = useNarrow(860);
+  const [tab, setTab] = useDayTab();
   const d = ui.date;
   const isToday = d === todayIso();
   const entries = entriesOn(data, d, projFilter(ui.calProject));
@@ -552,13 +769,17 @@ function DayView() {
     .sort((a, b) => Number(a.status === 'done') - Number(b.status === 'done') || Number(!!b.quick) - Number(!!a.quick));
   const doneN = entries.filter((e) => !e.ghost && e.it.status === 'done').length;
   const totalN = entries.filter((e) => !e.ghost).length;
+  const nPlan = toPlanCount(data, d);
   const dd = parseIso(d);
   const dateLabel = `${DAYS[dd.getDay()]} ${dd.getDate()} ${MONTHS[dd.getMonth()]}`;
   const agenda = (
     <aside className="agenda-panel" aria-label="Agenda">
       <div className="ap-head">
         <h2>Agenda</h2>
-        <span className="hint">Glisse pour ajouter</span>
+        <span className="hint">
+          <span className="on-mouse">Glisse pour ajouter</span>
+          <span className="on-touch">Appui long pour ajouter</span>
+        </span>
       </div>
       <AllDay entries={entries} />
       <AgendaScroll>
@@ -566,6 +787,80 @@ function DayView() {
       </AgendaScroll>
     </aside>
   );
+  const progress = totalN > 0 && (
+    <div className="day-progress" aria-label={`${doneN} sur ${totalN} terminés`}>
+      <div className="dp-bar">
+        <i style={{ width: `${Math.round((doneN / totalN) * 100)}%` }} />
+      </div>
+      <span>{doneN === totalN ? 'Tout est fait, bravo !' : `${doneN} sur ${totalN} terminé${doneN > 1 ? 's' : ''}`}</span>
+    </div>
+  );
+
+  if (phone) {
+    // Téléphone : la journée dans l'ordre (horaires puis le reste), l'agenda et « À planifier » à un geste.
+    const timed = entries.filter((e) => e.it.time).sort((a, b) => minutesOf(a.it.time!) - minutesOf(b.it.time!));
+    const allDay = entries.filter((e) => isEvent(e.it) && !e.it.time);
+    return (
+      <>
+        <MobileCalBar tabs={{ tab, setTab, nDay: entries.filter((e) => e.it.status !== 'done').length, nPlan: backlog(data).length + (isToday ? overdue(data).length : 0) }} />
+        {tab === 'day' && (
+          <div className="stack mday">
+            {isToday && <Alerts />}
+            {nPlan > 0 && (
+              <div className="plan-hint">
+                <span>
+                  <b>{nPlan}</b> tâche{nPlan > 1 ? 's' : ''} à placer.
+                </span>
+                <PlanButton date={d} n={nPlan} sm />
+              </div>
+            )}
+            {progress}
+            {allDay.length > 0 && <AllDay entries={entries} />}
+            {timed.length > 0 && (
+              <div className="cards">
+                {timed.map((e) => (
+                  <Card key={`${e.it.id}-${e.date}`} it={e.it} o={{ noDate: true, ghost: e.ghost }} />
+                ))}
+              </div>
+            )}
+            <div className="sec" data-drop="date" data-date={d}>
+              {tasks.length ? (
+                <>
+                  {timed.length > 0 && (
+                    <div className="sec-head">
+                      <h2>
+                        Sans horaire <span className="n">{tasks.length}</span>
+                      </h2>
+                    </div>
+                  )}
+                  <div className="cards">
+                    {tasks.map((i) => (
+                      <Card key={i.id} it={i} o={{ noDate: true }} />
+                    ))}
+                  </div>
+                </>
+              ) : !timed.length ? (
+                <div className="drop-hint">Rien de prévu {isToday ? "aujourd'hui" : 'ce jour-là'}. Note ce que tu as en tête avec le bouton nuage, ou planifie tes tâches.</div>
+              ) : null}
+            </div>
+          </div>
+        )}
+        {tab === 'agenda' && <div className="mday">{agenda}</div>}
+        {tab === 'plan' && (
+          <div className="stack mday">
+            {nPlan > 0 && (
+              <div className="plan-hint">
+                <span>L&apos;IA place ces tâches dans {isToday ? 'ta journée' : 'ce jour'} et estime leur durée.</span>
+                <PlanButton date={d} n={nPlan} sm />
+              </div>
+            )}
+            <PlanPanel flat />
+          </div>
+        )}
+      </>
+    );
+  }
+
   return (
     <>
       <header className="vh day-head">
@@ -576,6 +871,7 @@ function DayView() {
           <h1>{isToday ? 'Ma journée' : d < todayIso() ? 'Journée passée' : 'Journée à venir'}</h1>
         </div>
         <div className="vh-actions">
+          <PlanButton date={d} n={nPlan} />
           <CalNav />
         </div>
       </header>
@@ -584,16 +880,7 @@ function DayView() {
       <div className="today-grid">
         <div className="stack today-main">
           {isToday && <Alerts />}
-          {totalN > 0 && (
-            <div className="day-progress" aria-label={`${doneN} sur ${totalN} terminés`}>
-              <div className="dp-bar">
-                <i style={{ width: `${Math.round((doneN / totalN) * 100)}%` }} />
-              </div>
-              <span>
-                {doneN === totalN ? 'Tout est fait, bravo !' : `${doneN} sur ${totalN} terminé${doneN > 1 ? 's' : ''}`}
-              </span>
-            </div>
-          )}
+          {progress}
           <div className="sec" data-drop="date" data-date={d}>
             {tasks.length ? (
               <div className="cards">
@@ -647,7 +934,7 @@ function WeekView() {
   const byDay = days.map((d) => entriesOn(data, d, projFilter(ui.calProject)));
   return (
     <>
-      <Head eyebrow={`Semaine ${isoWeek(m)}`} title={label} actions={<CalNav />} />
+      {narrow ? <MobileCalBar /> : <Head eyebrow={`Semaine ${isoWeek(m)}`} title={label} actions={<CalNav />} />}
       <Compass />
       <ProjectLegend />
       <div className="stack">
@@ -797,11 +1084,12 @@ export function MonthGrid({ ym, projectId, compact }: { ym: string; projectId?: 
 
 function MonthView() {
   const { ui } = useUI();
+  const phone = useNarrow(860);
   const ym = ui.date.slice(0, 7);
   const [y, m] = ym.split('-').map(Number);
   return (
     <>
-      <Head eyebrow="Mois" title={`${MONTHS[m - 1]} ${y}`} actions={<CalNav />} />
+      {phone ? <MobileCalBar /> : <Head eyebrow="Mois" title={`${MONTHS[m - 1]} ${y}`} actions={<CalNav />} />}
       <Compass />
       <ProjectLegend />
       <div className="day-grid">

@@ -19,6 +19,9 @@ export const DEFAULT_SETTINGS: Settings = {
   reviewEvery: 7,
   showMascots: true,
   theme: 'auto',
+  about: '',
+  autoPlan: true,
+  lastPrepared: null,
 };
 
 export const STATUSES: [Status, string][] = [

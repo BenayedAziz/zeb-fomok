@@ -92,6 +92,26 @@ export function SettingsView() {
 
         <div className="sec">
           <div className="sec-head">
+            <h2>Ce que l&apos;IA retient de toi</h2>
+          </div>
+          <label className="fld" style={{ maxWidth: 720 }}>
+            <span className="hint">Ton travail principal, tes horaires, tes habitudes. L&apos;IA s&apos;en sert pour ranger et planifier, et l&apos;enrichit quand tu lui parles de toi (« je travaille chez… du lundi au vendredi »). Corrige ou complète librement.</span>
+            <textarea
+              className="inp"
+              rows={5}
+              key={s.about || ''}
+              defaultValue={s.about || ''}
+              placeholder="Ex. Travaille chez VINCI Energies du lundi au vendredi, 9h-18h. Freelance le soir (Egyptours, PiHub). Sport le mardi à 19h."
+              onBlur={(e) => e.target.value.trim() !== (s.about || '').trim() && (save({ about: e.target.value.trim() }), toast({ text: 'Mémoire mise à jour' }))}
+            />
+          </label>
+          <div className="toggles" style={{ marginTop: 8 }}>
+            <Toggle on={s.autoPlan !== false} onChange={(v) => save({ autoPlan: v })} label="Préparer ma journée tout seul" hint="Une fois par jour, le soir pour le lendemain (ou le matin si ce n'est pas fait), l'IA place tes tâches dans ton agenda. Tu peux tout annuler." />
+          </div>
+        </div>
+
+        <div className="sec">
+          <div className="sec-head">
             <h2>Apparence</h2>
           </div>
           <ThemeChoice />
