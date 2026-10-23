@@ -1287,3 +1287,17 @@ button.dom-title:hover { color: var(--sky-700); }
 @media (prefers-reduced-motion: reduce) { .sp-card img, .sp-opt.on::after { animation: none; } }
 /* Le bleu ciel reste clair en mode sombre : texte toujours foncé dessus (contraste) */
 .btn.primary, .btn.primary:hover:not(:disabled), .chip.ai { color: #142133; }
+
+/* Agenda au doigt : on défile librement, l'appui long attrape un bloc ou ouvre un créneau */
+.tl, .tblock { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.tblock { touch-action: pan-x pan-y; }
+.tb-handle { touch-action: pan-x pan-y; }
+.tblock.held { z-index: 6; transform-origin: center; box-shadow: var(--shadow-lg), inset 0 0 0 2px var(--sky-500); animation: lift 0.22s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+@keyframes lift { from { scale: 1; } 60% { scale: 1.05; } to { scale: 1.03; } }
+.on-touch { display: none; }
+@media (hover: none) and (pointer: coarse) {
+  .on-touch { display: inline; }
+  .on-mouse { display: none; }
+  .tb-handle { height: 14px; }
+}
+@media (prefers-reduced-motion: reduce) { .tblock.held { animation: none; } }

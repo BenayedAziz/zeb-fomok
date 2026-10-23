@@ -15,6 +15,49 @@ export const HOUR_PX = 52;
 const SNAP = 15;
 const snap = (m: number) => Math.round(m / SNAP) * SNAP;
 
+/* Au doigt, l'agenda doit d'abord défiler : une action ne part qu'après un appui maintenu, sans bouger. */
+const HOLD_MS = 450;
+const SLOP = 10;
+function useHold() {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const from = useRef<{ x: number; y: number } | null>(null);
+  const cancel = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    from.current = null;
+  };
+  const arm = (x: number, y: number, fire: () => void) => {
+    cancel();
+    from.current = { x, y };
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      try {
+        navigator.vibrate?.(15); // petit retour : « c'est attrapé »
+      } catch {}
+      fire();
+    }, HOLD_MS);
+  };
+  /** Le doigt bouge avant la fin de l'appui : c'est un défilement, on laisse faire. */
+  const check = (x: number, y: number) => {
+    if (timer.current && from.current && Math.hypot(x - from.current.x, y - from.current.y) > SLOP) cancel();
+  };
+  useEffect(() => cancel, []);
+  return { arm, check, cancel };
+}
+
+/** Bloque le défilement de la page tant qu'on déplace quelque chose au doigt. */
+function useNoScroll(ref: React.RefObject<HTMLElement | null>, active: boolean) {
+  const on = useRef(active);
+  on.current = active;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const stop = (e: TouchEvent) => on.current && e.cancelable && e.preventDefault();
+    el.addEventListener('touchmove', stop, { passive: false });
+    return () => el.removeEventListener('touchmove', stop);
+  }, [ref]);
+}
+
 export function Head({ eyebrow, title, lede, actions }: { eyebrow: string; title: React.ReactNode; lede?: React.ReactNode; actions?: React.ReactNode }) {
   return (
     <header className="vh">
@@ -257,6 +300,11 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
   const ev = isEvent(it);
   const [drag, setDrag] = useState<{ mode: 'move' | 'resize'; x0: number; y0: number; dx: number; dy: number } | null>(null);
   const moved = useRef(false);
+  /** Attrapé au doigt par un appui long : le relâcher sans bouger n'ouvre pas la fiche. */
+  const held = useRef(false);
+  const el = useRef<HTMLDivElement>(null);
+  const hold = useHold();
+  useNoScroll(el, !!drag);
 
   const dyMin = drag ? (drag.dy / HOUR_PX) * 60 : 0;
   const start = drag?.mode === 'move' ? snap(p.start + dyMin) : p.start;
@@ -267,11 +315,21 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
   const begin = (mode: 'move' | 'resize') => (e: React.PointerEvent) => {
     if (ghost || e.button !== 0) return;
     e.stopPropagation();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     moved.current = false;
-    setDrag({ mode, x0: e.clientX, y0: e.clientY, dx: 0, dy: 0 });
+    held.current = false;
+    const { clientX: x0, clientY: y0 } = e;
+    if (e.pointerType === 'touch') {
+      hold.arm(x0, y0, () => {
+        held.current = true;
+        setDrag({ mode, x0, y0, dx: 0, dy: 0 });
+      });
+      return;
+    }
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setDrag({ mode, x0, y0, dx: 0, dy: 0 });
   };
   const move = (e: React.PointerEvent) => {
+    hold.check(e.clientX, e.clientY);
     if (!drag) return;
     const dy = e.clientY - drag.y0;
     const dx = drag.mode === 'move' ? e.clientX - drag.x0 : 0;
@@ -279,6 +337,7 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
     setDrag({ ...drag, dx, dy });
   };
   const end = (e: React.PointerEvent) => {
+    hold.cancel();
     if (!drag) return;
     if (moved.current) {
       if (drag.mode === 'move') {
@@ -301,15 +360,21 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
 
   return (
     <div
-      className={`tblock${ev ? ' event' : ''}${ghost ? ' ghost' : ''}${it.status === 'done' ? ' done' : ''}${drag ? ' dragging' : ''}${ui.justDone[it.id] ? ' just-done' : ''}`}
+      ref={el}
+      className={`tblock${ev ? ' event' : ''}${ghost ? ' ghost' : ''}${it.status === 'done' ? ' done' : ''}${drag ? ' dragging' : ''}${drag && held.current ? ' held' : ''}${ui.justDone[it.id] ? ' just-done' : ''}`}
       style={{ top, height, left: `calc(${(p.lane / p.lanes) * 100}% + 2px)`, width: `calc(${100 / p.lanes}% - 4px)`, transform: drag?.dx ? `translateX(${drag.dx}px)` : undefined, '--pc': colorOfItem(store.data, it) } as React.CSSProperties}
       onPointerDown={begin('move')}
       onPointerMove={move}
       onPointerUp={end}
-      onPointerCancel={() => setDrag(null)}
+      onPointerCancel={() => {
+        hold.cancel();
+        setDrag(null);
+      }}
+      onContextMenu={(e) => e.preventDefault()}
       onClick={(e) => {
         e.stopPropagation();
-        if (!moved.current) openDrawer({ type: 'item', id: it.id });
+        if (!moved.current && !held.current) openDrawer({ type: 'item', id: it.id });
+        held.current = false;
       }}
       role="button"
       tabIndex={0}
@@ -428,6 +493,9 @@ function Timeline({ date, entries, showHours, nowLine }: { date: string; entries
   const { data } = useStore();
   const [draft, setDraft] = useState<Draft | null>(null);
   const draftEl = useRef<HTMLDivElement>(null);
+  const tlEl = useRef<HTMLDivElement>(null);
+  const hold = useHold();
+  useNoScroll(tlEl, !!draft?.drawing);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const { dayStart, dayEnd } = data.settings;
   const hours = Array.from({ length: dayEnd - dayStart + 1 }, (_, i) => dayStart + i);
@@ -447,6 +515,7 @@ function Timeline({ date, entries, showHours, nowLine }: { date: string; entries
         </div>
       )}
       <div
+        ref={tlEl}
         className="tl"
         style={{ height: hours.length * HOUR_PX }}
         data-drop="timeline"
@@ -457,23 +526,29 @@ function Timeline({ date, entries, showHours, nowLine }: { date: string; entries
           if (e.target !== e.currentTarget || e.button !== 0) return;
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
           const min = Math.floor((dayStart * 60 + ((e.clientY - rect.top) / HOUR_PX) * 60) / SNAP) * SNAP;
-          setAnchor(null);
           if (e.pointerType === 'touch') {
-            // Au doigt, on garde le défilement : un appui ouvre directement une heure.
-            setDraft({ a: min, b: min + 60, drawing: false });
-            requestAnimationFrame(() => draftEl.current && setAnchor(draftEl.current.getBoundingClientRect()));
+            // Au doigt : glisser fait défiler. Un appui long ouvre un créneau d'une heure, qu'on peut étirer avant de lâcher.
+            hold.arm(e.clientX, e.clientY, () => {
+              setAnchor(null);
+              setDraft({ a: min, b: min + 60, drawing: true });
+            });
             return;
           }
+          setAnchor(null);
           (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
           setDraft({ a: min, b: min + SNAP, drawing: true });
         }}
         onPointerMove={(e) => {
+          hold.check(e.clientX, e.clientY);
           if (!draft?.drawing) return;
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
           const min = Math.max(dayStart * 60, Math.min((dayEnd + 1) * 60, snap(dayStart * 60 + ((e.clientY - rect.top) / HOUR_PX) * 60)));
           setDraft({ ...draft, b: min });
         }}
+        onPointerCancel={() => hold.cancel()}
+        onContextMenu={(e) => e.preventDefault()}
         onPointerUp={() => {
+          hold.cancel();
           if (!draft?.drawing) return;
           let a = Math.min(draft.a, draft.b);
           let b = Math.max(draft.a, draft.b);
@@ -482,7 +557,7 @@ function Timeline({ date, entries, showHours, nowLine }: { date: string; entries
           setDraft({ a, b, drawing: false });
           requestAnimationFrame(() => draftEl.current && setAnchor(draftEl.current.getBoundingClientRect()));
         }}
-        title="Glisse sur l'agenda pour ajouter quelque chose"
+        title="Glisse sur l'agenda pour ajouter quelque chose (appui long au doigt)"
       >
         {hours.map((h) => (
           <div key={h} className="tl-line" style={{ top: (h - dayStart) * HOUR_PX }} />
@@ -558,7 +633,10 @@ function DayView() {
     <aside className="agenda-panel" aria-label="Agenda">
       <div className="ap-head">
         <h2>Agenda</h2>
-        <span className="hint">Glisse pour ajouter</span>
+        <span className="hint">
+          <span className="on-mouse">Glisse pour ajouter</span>
+          <span className="on-touch">Appui long pour ajouter</span>
+        </span>
       </div>
       <AllDay entries={entries} />
       <AgendaScroll>
