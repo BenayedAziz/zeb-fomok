@@ -2,7 +2,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import type { AiAction, AiItem, Data, Item, Project } from '@/lib/types';
-import { COLORS, PR, REC, ST, contextsOf, entriesOn, familyIds, isEvent, isOpen, list, projectPath, projectStats, sortItems, domainsSorted, freeColor, guessContext, mergeLinks, projectsSorted, recLabel } from '@/lib/gtd';
+import { COLORS, PR, REC, ST, colorKeyOfProject, contextsOf, entriesOn, familyIds, isEvent, isOpen, list, projectPath, projectStats, sortItems, domainsSorted, freeColor, guessContext, mergeLinks, projectsSorted, recLabel } from '@/lib/gtd';
 import { mascotFor } from '@/lib/mascots';
 import { applyTheme } from '@/lib/theme';
 import { DAYS, addDays, isDate, isTime, minutesOf, nextOccurrence, pad, parseIso, relDate, timeOf, todayIso } from '@/lib/dates';
@@ -75,8 +75,12 @@ interface UIApi {
   removeItem: (id: string) => void;
   /** Supprime un projet : ses actions restent, sans projet. Annulable. */
   deleteProject: (id: string) => void;
-  /** Range un projet (et ses sous-projets) dans un autre domaine de vie. Annulable. */
-  moveProject: (id: string, domainId: string | null) => void;
+  /** Range un projet ailleurs : dans un domaine (il redevient projet principal) ou dans un autre projet (sous-projet). Annulable. */
+  moveProject: (id: string, to: { domainId?: string | null; parentId?: string | null }) => void;
+  /** Un projet devient un domaine de vie : ses sous-projets deviennent ses projets. Annulable. */
+  projectToDomain: (id: string) => void;
+  /** Supprime un domaine : ses projets restent, sans domaine. Annulable. */
+  deleteDomain: (id: string) => void;
 }
 
 const Ctx = createContext<UIApi | null>(null);
@@ -367,8 +371,11 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       const s = storeRef.current;
       const d = s.get();
       const t = todayIso();
+      const nowM = new Date().getHours() * 60 + new Date().getMinutes();
+      // Une tâche du jour restée sur une heure déjà passée, pas faite, est replacée elle aussi.
+      const missed = (it: Item) => date === t && it.date === t && !!it.time && minutesOf(it.time) + (it.duration || 30) <= nowM;
       const tasks = list(d.items)
-        .filter((it) => isOpen(it) && !it.time && (!it.date || it.date === date || (it.date < t && date >= t)))
+        .filter((it) => isOpen(it) && ((!it.time && (!it.date || it.date === date || (it.date < t && date >= t))) || missed(it)))
         .sort(sortItems)
         .slice(0, 40);
       if (!tasks.length) {
@@ -426,13 +433,39 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
         const hi = (st.dayEnd + 1) * 60;
         let placed = 0;
         let later = 0;
-        (Array.isArray(r.plan) ? r.plan : []).forEach((x: { id?: string; time?: string; duration?: number }) => {
+        // L'IA propose, l'appli vérifie : jamais avant maintenant, jamais par-dessus un rendez-vous ni une autre tâche.
+        // Les blocs de présence (journée de travail…) ne bloquent pas : les tâches s'y posent.
+        const busy: [number, number][] = entriesOn(s.get(), date)
+          .filter((e) => e.it.time && !(isEvent(e.it) && (e.it.duration || 60) >= 180) && !ids.has(e.it.id))
+          .map((e) => [minutesOf(e.it.time!), minutesOf(e.it.time!) + (e.it.duration || (isEvent(e.it) ? 60 : 30))] as [number, number]);
+        const clash = (a0: number, b0: number) => busy.filter(([x, y]) => a0 < y && b0 > x);
+        const slot = (want: number, dur: number) => {
+          let at = Math.ceil(Math.max(want, from) / 5) * 5;
+          while (at + dur <= hi) {
+            const c = clash(at, at + dur);
+            if (!c.length) return at;
+            at = Math.ceil(Math.max(...c.map(([, y]) => y)) / 5) * 5;
+          }
+          return -1;
+        };
+        const proposals = (Array.isArray(r.plan) ? r.plan : [])
+          .filter((x: { time?: string }) => isTime(x?.time))
+          .sort((x: { time: string }, y: { time: string }) => minutesOf(x.time) - minutesOf(y.time));
+        proposals.forEach((x: { id?: string; time: string; duration?: number }) => {
           const it = x?.id && ids.has(x.id) ? s.get().items[x.id] : null;
-          if (!it || !isTime(x.time) || minutesOf(x.time) < lo || minutesOf(x.time) >= hi) return;
+          if (!it || minutesOf(x.time) >= hi) return;
           const dur = Math.min(600, Math.max(15, Math.round(Number(x.duration) / 15) * 15 || it.duration || 30));
+          const at = slot(Math.max(lo, minutesOf(x.time)), dur);
           prev.push([it.id, { date: it.date ?? null, time: it.time ?? null, duration: it.duration ?? null, status: it.status }]);
-          s.updateItem(it.id, { date, time: x.time, duration: dur, status: 'todo' });
           ids.delete(it.id);
+          if (at < 0) {
+            // Plus de place ce jour-là : le jour suivant, sans heure.
+            s.updateItem(it.id, { date: addDays(date, 1), time: null, duration: dur, status: 'todo' });
+            later++;
+            return;
+          }
+          busy.push([at, at + dur]);
+          s.updateItem(it.id, { date, time: timeOf(at), duration: dur, status: 'todo' });
           placed++;
         });
         (Array.isArray(r.later) ? r.later : []).forEach((x: { id?: string; date?: string }) => {
@@ -797,28 +830,100 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
   );
 
   const moveProject = useCallback(
-    (id: string, domainId: string | null) => {
+    (id: string, to: { domainId?: string | null; parentId?: string | null }) => {
       const s = storeRef.current;
       const d = s.get();
       const p = d.projects[id];
-      if (!p || (p.domainId || null) === domainId) return;
+      if (!p) return;
       const family = familyIds(d, id);
+      const parent = to.parentId ? d.projects[to.parentId] : null;
+      if (to.parentId && (!parent || family.includes(to.parentId))) return; // pas dans lui-même ni dans un de ses sous-projets
+      const domainId = parent ? parent.domainId || null : to.domainId !== undefined ? to.domainId : p.domainId || null;
+      const parentId = parent ? parent.id : null;
+      if ((p.domainId || null) === domainId && (p.parentId || null) === parentId) return;
       const before = family.map((k) => [k, d.projects[k]?.domainId ?? null, d.projects[k]?.parentId ?? null] as const);
       const old = p.domainId || null;
       // Les actions qui suivaient le domaine de l'ancien projet suivent le nouveau.
-      const items = list(d.items).filter((i) => i.projectId && family.includes(i.projectId) && (i.domainId || null) === old).map((i) => i.id);
-      family.forEach((k) => s.updateProject(k, { domainId }));
-      const parent = p.parentId ? d.projects[p.parentId] : null;
-      if (parent && (parent.domainId || null) !== domainId) s.updateProject(id, { parentId: null });
+      const items = old === domainId ? [] : list(d.items).filter((i) => i.projectId && family.includes(i.projectId) && (i.domainId || null) === old).map((i) => i.id);
+      if (old !== domainId) family.forEach((k) => s.updateProject(k, { domainId }));
+      s.updateProject(id, { parentId, domainId });
       items.forEach((i) => s.updateItem(i, { domainId }));
       toast({
-        text: `${p.name} → ${domainId ? d.domains[domainId]?.name : 'Sans domaine'}`,
+        text: parent ? `${p.name} → dans ${parent.name}` : `${p.name} → ${domainId ? d.domains[domainId]?.name : 'Sans domaine'}${p.parentId ? ', en projet principal' : ''}`,
         actions: [
           {
             label: 'Annuler',
             run: () => {
               before.forEach(([k, dom, par]) => s.updateProject(k, { domainId: dom, parentId: par }));
               items.forEach((i) => s.updateItem(i, { domainId: old }));
+            },
+          },
+        ],
+      });
+    },
+    [toast],
+  );
+
+  const projectToDomain = useCallback(
+    (id: string) => {
+      const s = storeRef.current;
+      const d = s.get();
+      const p = d.projects[id];
+      if (!p) return;
+      const exists = Object.values(d.domains).find((x) => x.name.trim().toLowerCase() === p.name.trim().toLowerCase());
+      const dom = exists || s.addDomain({ name: p.name.slice(0, 60), color: colorKeyOfProject(d, p), position: Object.keys(d.domains).length });
+      const family = familyIds(d, id).filter((k) => k !== id);
+      const kids = list(d.projects).filter((x) => x.parentId === id).map((x) => x.id);
+      const before = family.map((k) => [k, d.projects[k]?.domainId ?? null, d.projects[k]?.parentId ?? null] as const);
+      const own = list(d.items).filter((i) => i.projectId === id).map((i) => [i.id, i.domainId ?? null] as const);
+      const famItems = list(d.items).filter((i) => i.projectId && family.includes(i.projectId)).map((i) => [i.id, i.domainId ?? null] as const);
+      const pins = list(d.pins).filter((x) => x.projectId === id).map((x) => x.id);
+      family.forEach((k) => s.updateProject(k, { domainId: dom.id }));
+      kids.forEach((k) => s.updateProject(k, { parentId: null }));
+      own.forEach(([i]) => s.updateItem(i, { projectId: null, domainId: dom.id }));
+      famItems.forEach(([i]) => s.updateItem(i, { domainId: dom.id }));
+      s.removeProject(id);
+      setUi((u) => ({ ...u, drawer: null, view: u.view === 'project' && u.projectId === id ? 'projects' : u.view, domainFilter: u.view === 'project' && u.projectId === id ? dom.id : u.domainFilter }));
+      toast({
+        text: `« ${p.name} » est maintenant un domaine de vie${kids.length ? ` avec ${kids.length} projet${kids.length > 1 ? 's' : ''}` : ''}.`,
+        actions: [
+          {
+            label: 'Annuler',
+            run: () => {
+              s.restore('projects', p);
+              before.forEach(([k, dom0, par]) => s.updateProject(k, { domainId: dom0, parentId: par }));
+              own.forEach(([i, dm]) => s.updateItem(i, { projectId: id, domainId: dm }));
+              famItems.forEach(([i, dm]) => s.updateItem(i, { domainId: dm }));
+              pins.forEach((k) => s.updatePin(k, { projectId: id }));
+              if (!exists) s.removeDomain(dom.id);
+            },
+          },
+        ],
+      });
+    },
+    [toast],
+  );
+
+  const deleteDomain = useCallback(
+    (id: string) => {
+      const s = storeRef.current;
+      const d = s.get();
+      const dom = d.domains[id];
+      if (!dom) return;
+      const projs = list(d.projects).filter((x) => x.domainId === id).map((x) => x.id);
+      const items = list(d.items).filter((x) => x.domainId === id).map((x) => x.id);
+      s.removeDomain(id);
+      items.forEach((i) => s.updateItem(i, { domainId: null }));
+      setUi((u) => ({ ...u, drawer: null, domainFilter: u.domainFilter === id ? null : u.domainFilter }));
+      toast({
+        text: `Domaine « ${dom.name} » supprimé.${projs.length ? ` Ses ${projs.length} projet${projs.length > 1 ? 's restent' : ' reste'}, sans domaine.` : ''}`,
+        actions: [
+          {
+            label: 'Annuler',
+            run: () => {
+              s.restore('domains', dom);
+              projs.forEach((k) => s.get().projects[k] && s.updateProject(k, { domainId: id }));
+              items.forEach((i) => s.get().items[i] && s.updateItem(i, { domainId: id }));
             },
           },
         ],
@@ -949,8 +1054,10 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       removeItem,
       deleteProject,
       moveProject,
+      projectToDomain,
+      deleteDomain,
     }),
-    [ui, set, go, toast, toastState, dismissToast, capture, aiSort, fileWithAi, planDay, findLinks, toggleDone, schedule, removeItem, deleteProject, moveProject],
+    [ui, set, go, toast, toastState, dismissToast, capture, aiSort, fileWithAi, planDay, findLinks, toggleDone, schedule, removeItem, deleteProject, moveProject, projectToDomain, deleteDomain],
   );
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
 }

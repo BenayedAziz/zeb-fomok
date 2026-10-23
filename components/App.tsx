@@ -17,7 +17,7 @@ import { HelpView } from './views/Help';
 import { TrashView } from './views/Trash';
 import { FeedbackButton, FeedbackView, isAdmin } from './Feedback';
 import { Mic } from './Mic';
-import { DomainDrop, ProjNav, ProjectTreeProvider } from './ProjectTree';
+import { DomainGroup, ProjNav, ProjectTreeProvider } from './ProjectTree';
 import { Logo } from './Logo';
 import { childrenOf, colorOfProject, counts, parentOf, domainsSorted, lastReviewDays, list, projectStats, projectsSorted, reviewDue } from '@/lib/gtd';
 import { addDays, longDate, nextMonday, timeOf, todayIso } from '@/lib/dates';
@@ -258,19 +258,9 @@ function Sidebar() {
             const isOpen = !closedDoms.has(g.id);
             if (!g.top.length && g.id === 'none') return null;
             return (
-              <DomainDrop id={g.id} key={g.id}>
-                <div className="dom-row">
-                  <button className={`nav-caret${isOpen ? ' open' : ''}`} onClick={() => toggleDom(g.id)} aria-expanded={isOpen} aria-label={`${isOpen ? 'Replier' : 'Déplier'} ${g.name}`} disabled={!g.top.length}>
-                    <Icon name="right" />
-                  </button>
-                  <button className={`dom-name${ui.view === 'projects' && ui.domainFilter === g.id ? ' on' : ''}`} onClick={() => (g.id === 'none' ? go('projects') : go('projects', { domain: g.id }))}>
-                    <i className="sw" style={{ background: g.color }} />
-                    <span>{g.name}</span>
-                    {g.top.length > 0 && <span className="n">{g.top.length}</span>}
-                  </button>
-                </div>
+              <DomainGroup key={g.id} id={g.id} name={g.name} color={g.color} count={g.top.length} open={isOpen} onToggle={() => toggleDom(g.id)}>
                 {isOpen && g.top.map((p) => <ProjNav key={p.id} p={p} depth={0} projects={projects} opened={openProj} toggle={toggleProj} />)}
-              </DomainDrop>
+              </DomainGroup>
             );
           })}
           {!projects.length && (
