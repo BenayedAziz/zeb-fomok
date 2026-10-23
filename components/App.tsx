@@ -17,6 +17,7 @@ import { HelpView } from './views/Help';
 import { TrashView } from './views/Trash';
 import { FeedbackButton, FeedbackView, isAdmin } from './Feedback';
 import { Mic } from './Mic';
+import { DomainDrop, ProjNav, ProjectTreeProvider } from './ProjectTree';
 import { Logo } from './Logo';
 import { childrenOf, colorOfProject, counts, parentOf, domainsSorted, lastReviewDays, list, projectStats, projectsSorted, reviewDue } from '@/lib/gtd';
 import { addDays, longDate, nextMonday, timeOf, todayIso } from '@/lib/dates';
@@ -90,27 +91,6 @@ function Caret({ open, onClick, label }: { open: boolean; onClick: () => void; l
     <button className={`nav-caret${open ? ' open' : ''}`} onClick={onClick} aria-expanded={open} aria-label={`${open ? 'Replier' : 'Déplier'} ${label}`}>
       <Icon name="right" />
     </button>
-  );
-}
-
-function ProjNav({ p, depth, projects, opened, toggle }: { p: Project; depth: number; projects: Project[]; opened: Set<string>; toggle: (id: string) => void }) {
-  const { data } = useStore();
-  const { ui, go } = useUI();
-  const kids = depth < 6 ? childrenOf(data, p.id, projects) : [];
-  const isOpen = opened.has(p.id);
-  const st = projectStats(data, p.id);
-  return (
-    <>
-      <div className="nav-row" style={{ '--depth': depth } as React.CSSProperties}>
-        <button className={`nav proj${ui.view === 'project' && ui.projectId === p.id ? ' on' : ''}`} onClick={() => go('project', { projectId: p.id })} title={p.name}>
-          <i className="pdot" style={{ background: colorOfProject(data, p) }} />
-          <span>{p.name}</span>
-          {st.open.length ? <span className="n">{st.open.length}</span> : null}
-        </button>
-        {kids.length > 0 ? <Caret open={isOpen} onClick={() => toggle(p.id)} label={p.name} /> : <span className="caret-gap" />}
-      </div>
-      {isOpen && kids.map((k) => <ProjNav key={k.id} p={k} depth={depth + 1} projects={projects} opened={opened} toggle={toggle} />)}
-    </>
   );
 }
 
@@ -211,6 +191,7 @@ function Sidebar() {
   const projects = projectsSorted(data).filter((p) => p.status === 'active');
   const orphans = projects.filter((p) => (!p.domainId || !data.domains[p.domainId]) && !parentOf(data, p));
   const pinned = projects.filter((p) => p.pinned);
+  const midRef = useRef<HTMLDivElement>(null);
   const { closedDoms, openProj, toggleDom, toggleProj } = useTree(data, ui.view === 'project' ? ui.projectId : null);
   const groups = [
     ...doms.map((d) => ({ id: d.id, name: d.name, color: `var(--${d.color})`, top: projects.filter((p) => p.domainId === d.id && !parentOf(data, p)) })),
@@ -255,7 +236,8 @@ function Sidebar() {
           </nav>
         </div>
 
-        <div className="side-mid">
+        <div className="side-mid" ref={midRef}>
+          <ProjectTreeProvider scrollRef={midRef}>
           <div className="mid-head">
             <button className={`mid-title${ui.view === 'projects' && !ui.domainFilter ? ' on' : ''}`} onClick={() => go('projects')}>
               <Icon name="proj" />
@@ -268,13 +250,7 @@ function Sidebar() {
           {pinned.length > 0 && (
             <div className="proj-group pinned">
               {pinned.map((p) => (
-                <div className="nav-row" key={p.id}>
-                  <button className={`nav proj${ui.view === 'project' && ui.projectId === p.id ? ' on' : ''}`} onClick={() => go('project', { projectId: p.id })} title={p.name}>
-                    <Icon name="pin" />
-                    <span>{p.name}</span>
-                  </button>
-                  <span className="caret-gap" />
-                </div>
+                <ProjNav key={p.id} p={p} depth={0} projects={projects} opened={openProj} toggle={toggleProj} pinned />
               ))}
             </div>
           )}
@@ -282,7 +258,7 @@ function Sidebar() {
             const isOpen = !closedDoms.has(g.id);
             if (!g.top.length && g.id === 'none') return null;
             return (
-              <div className="proj-group" key={g.id}>
+              <DomainDrop id={g.id} key={g.id}>
                 <div className="dom-row">
                   <button className={`nav-caret${isOpen ? ' open' : ''}`} onClick={() => toggleDom(g.id)} aria-expanded={isOpen} aria-label={`${isOpen ? 'Replier' : 'Déplier'} ${g.name}`} disabled={!g.top.length}>
                     <Icon name="right" />
@@ -294,7 +270,7 @@ function Sidebar() {
                   </button>
                 </div>
                 {isOpen && g.top.map((p) => <ProjNav key={p.id} p={p} depth={0} projects={projects} opened={openProj} toggle={toggleProj} />)}
-              </div>
+              </DomainDrop>
             );
           })}
           {!projects.length && (
@@ -306,6 +282,7 @@ function Sidebar() {
             <Icon name="plus" />
             Nouveau domaine de vie
           </button>
+          </ProjectTreeProvider>
         </div>
 
         <div className="side-foot">

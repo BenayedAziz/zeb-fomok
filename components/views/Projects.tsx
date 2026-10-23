@@ -222,7 +222,7 @@ export function ProjectsView() {
 export function ProjectView() {
   const store = useStore();
   const { data } = store;
-  const { ui, go, openDrawer, toast } = useUI();
+  const { ui, go, openDrawer, toast, deleteProject } = useUI();
   const [month, setMonth] = useState(todayIso().slice(0, 7));
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
@@ -314,6 +314,9 @@ export function ProjectView() {
               }}
             >
               {p.archivedAt ? 'Désarchiver' : 'Archiver'}
+            </button>
+            <button className="btn ghost danger" onClick={() => deleteProject(id)}>
+              Supprimer
             </button>
             <div className="seg">
               {PSTATUSES.map(([k, l]) => (
