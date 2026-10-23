@@ -4,11 +4,12 @@ import { useStore, uuid } from '@/lib/store';
 import type { Horizon } from '@/lib/types';
 import { useUI } from './ui-context';
 import { ImportPanel } from './Import';
+import { MascotChoice, ThemeChoice } from './StylePicker';
 import { COLORS, DOMAIN_SUGGESTIONS, HORIZONS } from '@/lib/gtd';
 import { todayIso } from '@/lib/dates';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
-type Step = 'welcome' | 'interview' | 'recap' | 'manual' | 'tools' | 'first';
+type Step = 'welcome' | 'style' | 'interview' | 'recap' | 'manual' | 'tools' | 'first';
 
 const opening = (name: string | null) =>
   `Salut${name ? ` ${name}` : ''} ! Je vais te poser quelques questions pour préparer ton espace : tes domaines de vie, tes objectifs et tes projets en cours. Ça prend 5 minutes, et tu pourras tout modifier ensuite.\n\nPour commencer : qu'est-ce qui occupe ta vie en ce moment ? Ton travail, tes projets à côté, le perso.`;
@@ -31,6 +32,7 @@ export const ONB_KEY = 'sc-onboarding-done';
 function StepsBar({ step }: { step: Step }) {
   const order: [Step[], string][] = [
     [['welcome'], 'Bienvenue'],
+    [['style'], 'Ton style'],
     [['interview', 'manual'], 'Entretien'],
     [['recap'], 'Récap'],
     [['tools'], 'Tes outils'],
@@ -200,8 +202,35 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
             </div>
           </div>
           <div className="vh-actions">
+            <button className="btn primary lg" onClick={() => setStep('style')}>
+              C&apos;est parti
+            </button>
+          </div>
+        </>
+      )}
+
+      {step === 'style' && (
+        <>
+          <div>
+            <div className="eyebrow">Ton style</div>
+            <h1>
+              Ton espace, <em>à ton goût</em>.
+            </h1>
+            <p className="lede">Choisis comment ça s&apos;affiche. Tu vois le résultat tout de suite, et tu peux changer d&apos;avis plus tard dans les Réglages.</p>
+          </div>
+          <div className="onb-style">
+            <section>
+              <h2>Les personnages nuages</h2>
+              <MascotChoice />
+            </section>
+            <section>
+              <h2>L&apos;apparence</h2>
+              <ThemeChoice />
+            </section>
+          </div>
+          <div className="vh-actions">
             <button className="btn primary lg" onClick={() => setStep('interview')}>
-              Commencer l&apos;entretien
+              Continuer avec l&apos;entretien
             </button>
             <button className="btn lg" onClick={() => setStep('manual')}>
               Version rapide, sans entretien

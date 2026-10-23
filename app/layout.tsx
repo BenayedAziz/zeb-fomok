@@ -4,6 +4,7 @@ import '@fontsource/lexend/latin-400.css';
 import '@fontsource/lexend/latin-500.css';
 import '@fontsource/lexend/latin-600.css';
 import './globals.css';
+import { THEME_BOOT } from '@/lib/theme';
 
 export const metadata: Metadata = {
   title: 'Second Cerveau',
@@ -25,7 +26,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr">
+    <html lang="fr" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+      </head>
       <body>{children}</body>
     </html>
   );
