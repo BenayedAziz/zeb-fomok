@@ -225,9 +225,27 @@ export const reviewDue = (d: Data) => {
 };
 export const domainOfProject = (d: Data, p?: Project | null) => (p && p.domainId ? d.domains[p.domainId] || null : null);
 export function colorKeyOfProject(d: Data, p?: Project | null) {
-  return p?.color || domainOfProject(d, p)?.color || 'c8';
+  return domainOfProject(d, p)?.color || p?.color || 'c8';
 }
-export const colorOfProject = (d: Data, p?: Project | null) => `var(--${colorKeyOfProject(d, p)})`;
+/*
+ * Une couleur par domaine de vie ; ses projets en sont des nuances (plus foncée, plus claire…) et un sous-projet
+ * reprend la teinte de son parent, éclaircie. D'un coup d'œil : tel projet appartient à tel domaine.
+ */
+const SHADES = ['', 'color-mix(in oklab, X 72%, #0b1d33)', 'color-mix(in oklab, X 70%, #ffffff)', 'color-mix(in oklab, X 82%, #5b2bd6)', 'color-mix(in oklab, X 80%, #0f8f7e)', 'color-mix(in oklab, X 58%, #ffffff)'];
+export function colorOfProject(d: Data, p?: Project | null): string {
+  if (!p) return 'var(--c8)';
+  const dom = domainOfProject(d, p);
+  if (!dom) return `var(--${p.color || 'c8'})`;
+  const parent = p.parentId && p.parentId !== p.id ? d.projects[p.parentId] : null;
+  if (parent && parent.domainId === p.domainId && !parent.archivedAt) return `color-mix(in oklab, ${colorOfProject(d, { ...parent, parentId: parent.parentId === p.id ? null : parent.parentId })} 70%, #ffffff)`;
+  const siblings = Object.values(d.projects)
+    .filter((x) => x.domainId === p.domainId && !x.parentId && !x.archivedAt)
+    .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id.localeCompare(b.id)));
+  const i = Math.max(0, siblings.findIndex((x) => x.id === p.id));
+  const base = `var(--${dom.color})`;
+  const shade = SHADES[i % SHADES.length];
+  return shade ? shade.replace('X', base) : base;
+}
 export function colorOfItem(d: Data, it: Item) {
   const p = it.projectId ? d.projects[it.projectId] : null;
   if (p) return colorOfProject(d, p);

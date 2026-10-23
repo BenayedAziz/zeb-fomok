@@ -194,7 +194,10 @@ function Sidebar() {
   const midRef = useRef<HTMLDivElement>(null);
   const { closedDoms, openProj, toggleDom, toggleProj } = useTree(data, ui.view === 'project' ? ui.projectId : null);
   const groups = [
-    ...doms.map((d) => ({ id: d.id, name: d.name, color: `var(--${d.color})`, top: projects.filter((p) => p.domainId === d.id && !parentOf(data, p)) })),
+    // Les domaines qui ont des projets d'abord, les domaines vides ensuite (plus discrets).
+    ...doms
+      .map((d) => ({ id: d.id, name: d.name, color: `var(--${d.color})`, top: projects.filter((p) => p.domainId === d.id && !parentOf(data, p)) }))
+      .sort((a, b) => Number(!a.top.length) - Number(!b.top.length)),
     ...(orphans.length ? [{ id: 'none', name: 'Sans domaine', color: 'var(--line-2)', top: orphans }] : []),
   ];
   return (

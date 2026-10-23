@@ -419,6 +419,12 @@ function ProjectDrawer({ id, draft }: { id: string | null; draft?: Record<string
               ))}
           </select>
         </label>
+        {(creating ? form.domainId : p?.domainId) ? (
+          <div className="fld">
+            <span>Couleur</span>
+            <span className="hint">Une nuance de la couleur du domaine « {store.data.domains[(creating ? form.domainId : p?.domainId) || '']?.name} ». Change-la depuis le ⋯ du domaine, dans le menu.</span>
+          </div>
+        ) : (
         <div className="fld">
           <span>Couleur dans le calendrier</span>
           <div className="swatches">
@@ -436,6 +442,7 @@ function ProjectDrawer({ id, draft }: { id: string | null; draft?: Record<string
             })}
           </div>
         </div>
+        )}
         <label className="fld">
           <span>Objectif relié</span>
           <select className="inp" value={val('goalId')} onChange={(e) => change('goalId', e.target.value)}>

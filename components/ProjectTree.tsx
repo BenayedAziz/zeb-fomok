@@ -273,7 +273,7 @@ export function ProjNav({ p, depth, projects, opened, toggle, pinned }: { p: Pro
   const st = projectStats(data, p.id);
   return (
     <>
-      <div className={`nav-row prow${tree.dragId === p.id ? ' lifted' : ''}${tree.over === `p:${p.id}` ? ' drop-into' : ''}`} style={{ '--depth': pinned ? 0 : depth } as React.CSSProperties} data-proj={pinned ? undefined : p.id}>
+      <div className={`nav-row prow${tree.dragId === p.id ? ' lifted' : ''}${tree.over === `p:${p.id}` ? ' drop-into' : ''}`} style={{ '--pc': colorOfProject(data, p) } as React.CSSProperties} data-proj={pinned ? undefined : p.id}>
         <button
           className={`nav proj${ui.view === 'project' && ui.projectId === p.id ? ' on' : ''}`}
           onPointerDown={(e) => tree.start(e, p)}
@@ -299,7 +299,14 @@ export function ProjNav({ p, depth, projects, opened, toggle, pinned }: { p: Pro
           <span className="caret-gap" />
         )}
       </div>
-      {isOpen && kids.map((k) => <ProjNav key={k.id} p={k} depth={depth + 1} projects={projects} opened={opened} toggle={toggle} />)}
+      {isOpen && (
+        // Les sous-projets, reliés à leur projet par un trait de sa couleur.
+        <div className="proj-kids" style={{ '--pc': colorOfProject(data, p) } as React.CSSProperties}>
+          {kids.map((k) => (
+            <ProjNav key={k.id} p={k} depth={depth + 1} projects={projects} opened={opened} toggle={toggle} />
+          ))}
+        </div>
+      )}
     </>
   );
 }
@@ -316,7 +323,7 @@ export function DomainGroup({ id, name, color, count, open, onToggle, children }
     if (real && v.trim() && v.trim() !== name) store.updateDomain(id, { name: v.trim().slice(0, 60) });
   };
   return (
-    <div className={`proj-group${tree.dragId ? ' droppable' : ''}${tree.over === `d:${id}` ? ' drop-over' : ''}`} data-dom={id}>
+    <div className={`proj-group${count ? '' : ' empty'}${tree.dragId ? ' droppable' : ''}${tree.over === `d:${id}` ? ' drop-over' : ''}`} data-dom={id} style={{ '--dc': color } as React.CSSProperties}>
       <div className="dom-row">
         <button className={`nav-caret${open ? ' open' : ''}`} onClick={onToggle} aria-expanded={open} aria-label={`${open ? 'Replier' : 'Déplier'} ${name}`} disabled={!count}>
           <Icon name="right" />
@@ -351,7 +358,7 @@ export function DomainGroup({ id, name, color, count, open, onToggle, children }
           </button>
         )}
       </div>
-      {children}
+      {open && count > 0 && <div className="dom-kids">{children}</div>}
     </div>
   );
 }

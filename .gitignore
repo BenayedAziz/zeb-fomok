@@ -8,3 +8,6 @@ out
 next-env.d.ts
 .vercel
 .DS_Store
+
+# Captures de test locales
+audit/

@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import type { Item } from '@/lib/types';
 import { useUI, type CalMode } from '../ui-context';
@@ -7,11 +7,11 @@ import { Card, GroupedByProject } from '../Card';
 import { Icon } from '../icons';
 import { mascotFor } from '@/lib/mascots';
 import {
-  backlog, guessContext, isOpen, colorOfItem, colorOfProject, contextsOf, counts, goalsSorted, isEvent, list, overdue, projectsSorted, reviewDue, lastReviewDays, entriesOn, type Entry,
+  backlog, domainsSorted, guessContext, isOpen, colorOfItem, colorOfProject, contextsOf, counts, goalsSorted, isEvent, list, overdue, projectsSorted, reviewDue, lastReviewDays, entriesOn, type Entry,
 } from '@/lib/gtd';
 import { DAYS, DSHORT, MONTHS, MSHORT, addDays, isoOf, isoWeek, minutesOf, mondayOf, pad, parseIso, relDate, timeOf, timeRange, todayIso } from '@/lib/dates';
 
-export const HOUR_PX = 60;
+export const HOUR_PX = 72;
 const SNAP = 15;
 const snap = (m: number) => Math.round(m / SNAP) * SNAP;
 
@@ -146,6 +146,23 @@ function ProjectLegend() {
   const { ui, set } = useUI();
   const ps = projectsSorted(data).filter((p) => p.status === 'active');
   if (!ps.length) return null;
+  // Rangée par domaine : la couleur du domaine, puis ses projets dans leurs nuances.
+  const groups = [
+    ...domainsSorted(data).map((d) => ({ id: d.id, name: d.name, color: `var(--${d.color})`, ps: ps.filter((p) => p.domainId === d.id) })),
+    { id: 'none', name: 'Sans domaine', color: 'var(--line-2)', ps: ps.filter((p) => !p.domainId || !data.domains[p.domainId]) },
+  ].filter((g) => g.ps.length);
+  const chip = (p: (typeof ps)[number]) => (
+    <button
+      key={p.id}
+      className={`legend-item${ui.calProject === p.id ? ' on' : ''}${p.parentId ? ' sub' : ''}`}
+      style={{ '--pc': colorOfProject(data, p) } as React.CSSProperties}
+      onClick={() => set({ calProject: ui.calProject === p.id ? null : p.id })}
+      title={p.parentId && data.projects[p.parentId] ? `Dans ${data.projects[p.parentId].name}` : undefined}
+    >
+      <i className="dot" />
+      {p.name}
+    </button>
+  );
   return (
     <div className="legend" aria-label="Filtrer le calendrier par projet">
       {ui.calProject && (
@@ -153,16 +170,11 @@ function ProjectLegend() {
           Tous les projets ✕
         </button>
       )}
-      {ps.map((p) => (
-        <button
-          key={p.id}
-          className={`legend-item${ui.calProject === p.id ? ' on' : ''}`}
-          style={{ '--pc': colorOfProject(data, p) } as React.CSSProperties}
-          onClick={() => set({ calProject: ui.calProject === p.id ? null : p.id })}
-        >
-          <i className="dot" />
-          {p.name}
-        </button>
+      {groups.map((g) => (
+        <span key={g.id} className="legend-dom" style={{ '--dc': g.color } as React.CSSProperties}>
+          <span className="ld-name">{g.name}</span>
+          {g.ps.map(chip)}
+        </span>
       ))}
     </div>
   );
@@ -268,7 +280,7 @@ interface Placed {
 }
 /** Un événement de 3 h ou plus est un lieu où l'on est, pas une indisponibilité : les tâches s'y posent. */
 const BG_MIN = 180;
-function layout(entries: Entry[]): Placed[] {
+function layout(entries: Entry[], minPx = 26): Placed[] {
   const all: Placed[] = entries
     .map((e) => {
       const start = minutesOf(e.it.time!);
@@ -279,7 +291,7 @@ function layout(entries: Entry[]): Placed[] {
   const bgs = all.filter((p) => isEvent(p.e.it) && p.end - p.start >= BG_MIN).map((p) => ({ ...p, bg: true }));
   const items = all.filter((p) => !(isEvent(p.e.it) && p.end - p.start >= BG_MIN));
   // Un bloc court s'affiche avec une hauteur minimale lisible : on en tient compte pour ne pas les superposer.
-  const MIN_VIS = Math.ceil((26 / HOUR_PX) * 60);
+  const MIN_VIS = Math.ceil((minPx / HOUR_PX) * 60);
   const vend = (p: Placed) => Math.max(p.end, p.start + MIN_VIS);
   let cluster: Placed[] = [];
   let clusterEnd = -1;
@@ -304,7 +316,27 @@ function layout(entries: Entry[]): Placed[] {
   return [...bgs, ...items];
 }
 
-function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
+/** Largeur sous laquelle une colonne partagée devient illisible : on superpose en cascade plutôt que de couper en lamelles. */
+const LANE_MIN = 104;
+
+/**
+ * Position horizontale d'un bloc dans une colonne de largeur `w` (px).
+ * Assez de place : côte à côte. Sinon, en cascade comme un paquet de cartes : chaque bloc garde presque
+ * toute la largeur et son titre ; le plus tardif passe devant (ordre du DOM), décalé pour laisser voir celui de dessous.
+ */
+function geometry(p: Placed, w: number): { left: number | string; width: number | string; stacked?: boolean } {
+  if (p.bg) return { left: 2, width: 'calc(100% - 4px)' };
+  const x0 = p.inset ? 28 : 2;
+  if (!w) return { left: `calc(${(p.lane / p.lanes) * 100}% + ${x0}px)`, width: `calc(${100 / p.lanes}% - ${x0 + 2}px)` };
+  const avail = Math.max(40, w - x0 - 2);
+  if (p.lanes === 1) return { left: x0, width: avail };
+  const per = avail / p.lanes;
+  if (per >= LANE_MIN) return { left: x0 + p.lane * per, width: per - 3 };
+  const step = Math.max(6, Math.min(24, (avail - 96) / (p.lanes - 1)));
+  return { left: x0 + p.lane * step, width: avail - p.lane * step, stacked: true };
+}
+
+function TimeBlock({ p, dayStart, colW }: { p: Placed; dayStart: number; colW: number }) {
   const store = useStore();
   const { ui, openDrawer, toggleDone, toast } = useUI();
   const it = p.e.it;
@@ -323,6 +355,10 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
   const dur = drag?.mode === 'resize' ? Math.max(SNAP, snap(p.end - p.start + dyMin)) : p.end - p.start;
   const top = ((start - dayStart * 60) / 60) * HOUR_PX;
   const height = Math.max((dur / 60) * HOUR_PX - 2, 24);
+  const geo = geometry(p, colW);
+  // Une tâche dont le créneau est passé sans être cochée : elle reste à faire, on la signale.
+  const today = todayIso();
+  const late = !ev && !ghost && it.status !== 'done' && (p.e.date < today || (p.e.date === today && p.end <= nowMinutes()));
 
   const begin = (mode: 'move' | 'resize') => (e: React.PointerEvent) => {
     if (ghost || e.button !== 0) return;
@@ -373,12 +409,12 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
   return (
     <div
       ref={el}
-      className={`tblock${ev ? ' event' : ''}${p.bg ? ' bg' : ''}${ghost ? ' ghost' : ''}${it.status === 'done' ? ' done' : ''}${drag ? ' dragging' : ''}${drag && held.current ? ' held' : ''}${ui.justDone[it.id] ? ' just-done' : ''}`}
+      className={`tblock${ev ? ' event' : ''}${p.bg ? ' bg' : ''}${geo.stacked ? ' stacked' : ''}${late ? ' late' : ''}${ghost ? ' ghost' : ''}${it.status === 'done' ? ' done' : ''}${drag ? ' dragging' : ''}${drag && held.current ? ' held' : ''}${ui.justDone[it.id] ? ' just-done' : ''}`}
       style={{
         top,
         height,
-        left: p.bg ? 2 : `calc(${(p.lane / p.lanes) * 100}% + ${p.inset ? 26 : 2}px)`,
-        width: p.bg ? 'calc(100% - 4px)' : `calc(${100 / p.lanes}% - ${p.inset ? 30 : 4}px)`,
+        left: geo.left,
+        width: geo.width,
         transform: drag?.dx ? `translateX(${drag.dx}px)` : undefined,
         '--pc': colorOfItem(store.data, it),
       } as React.CSSProperties}
@@ -520,19 +556,34 @@ function QuickAdd({ date, start, end, anchor, onClose }: { date: string; start: 
   );
 }
 
-function Timeline({ date, entries, showHours, nowLine }: { date: string; entries: Entry[]; showHours: boolean; nowLine: boolean }) {
+/** Largeur d'un élément, suivie quand la fenêtre ou le panneau change de taille. */
+function useWidth(ref: React.RefObject<HTMLElement | null>) {
+  const [w, setW] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setW(el.clientWidth);
+    const ro = new ResizeObserver(() => setW(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return w;
+}
+
+function Timeline({ date, entries, showHours, nowLine, dense }: { date: string; entries: Entry[]; showHours: boolean; nowLine: boolean; dense?: boolean }) {
   const { data } = useStore();
   const [draft, setDraft] = useState<Draft | null>(null);
   const draftEl = useRef<HTMLDivElement>(null);
   const tlEl = useRef<HTMLDivElement>(null);
   const hold = useHold();
   useNoScroll(tlEl, !!draft?.drawing);
+  const colW = useWidth(tlEl);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const { dayStart, dayEnd } = data.settings;
   const hours = Array.from({ length: dayEnd - dayStart + 1 }, (_, i) => dayStart + i);
-  const placed = layout(entries.filter((e) => e.it.time));
-  const now = new Date();
-  const nowMin = now.getHours() * 60 + now.getMinutes();
+  // Colonne étroite (semaine) : les blocs courts gardent toute la largeur plutôt que de se partager une colonne illisible.
+  const placed = layout(entries.filter((e) => e.it.time), dense ? 0 : 26);
+  const nowMin = useMinute();
   const showNow = nowLine && date === todayIso() && nowMin >= dayStart * 60 && nowMin <= (dayEnd + 1) * 60;
   return (
     <div className={`tl-wrap${showHours ? '' : ' no-hours'}`}>
@@ -595,7 +646,7 @@ function Timeline({ date, entries, showHours, nowLine }: { date: string; entries
         ))}
         {showNow && <div className="tl-now" style={{ top: ((nowMin - dayStart * 60) / 60) * HOUR_PX }} />}
         {placed.map((p) => (
-          <TimeBlock key={`${p.e.it.id}-${p.e.date}`} p={p} dayStart={dayStart} />
+          <TimeBlock key={`${p.e.it.id}-${p.e.date}`} p={p} dayStart={dayStart} colW={colW} />
         ))}
         {draft && (
           <div
@@ -625,11 +676,13 @@ function Timeline({ date, entries, showHours, nowLine }: { date: string; entries
   );
 }
 
-function AllDay({ entries }: { entries: Entry[] }) {
+/** Ce qui n'a pas d'heure ce jour-là : les événements de la journée et, sur téléphone, les tâches à caser. */
+function AllDay({ entries, withTasks }: { entries: Entry[]; withTasks?: boolean }) {
   const { data } = useStore();
-  const { openDrawer } = useUI();
+  const { openDrawer, toggleDone } = useUI();
   const evs = entries.filter((e) => isEvent(e.it) && !e.it.time);
-  if (!evs.length) return null;
+  const tasks = withTasks ? entries.filter((e) => !isEvent(e.it) && !e.it.time && !e.ghost).sort((a, b) => Number(a.it.status === 'done') - Number(b.it.status === 'done')) : [];
+  if (!evs.length && !tasks.length) return null;
   return (
     <div className="allday">
       {evs.map((e) => (
@@ -638,6 +691,86 @@ function AllDay({ entries }: { entries: Entry[] }) {
           {e.it.recurrence ? ' ↻' : ''}
         </button>
       ))}
+      {tasks.length > 0 && (
+        <div className="ad-tasks">
+          <span className="ad-label">Sans heure</span>
+          {tasks.map((e) => (
+            <div key={e.it.id} className={`ad-task${e.it.status === 'done' ? ' done' : ''}`} style={{ '--pc': colorOfItem(data, e.it) } as React.CSSProperties}>
+              <button className="ck sm" onClick={() => toggleDone(e.it.id)} aria-label={e.it.status === 'done' ? 'Décocher' : 'Marquer fait'}>
+                <Icon name="check" />
+              </button>
+              <button className="ad-title" onClick={() => openDrawer({ type: 'item', id: e.it.id })}>
+                {e.it.title}
+              </button>
+              {e.it.quick && <span className="chip quick">2 min</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Minutes écoulées depuis minuit. */
+const nowMinutes = () => {
+  const n = new Date();
+  return n.getHours() * 60 + n.getMinutes();
+};
+
+/** L'heure qui avance : rafraîchit l'affichage chaque minute. */
+function useMinute() {
+  const [m, setM] = useState(nowMinutes);
+  useEffect(() => {
+    const t = window.setInterval(() => setM(nowMinutes()), 60_000);
+    return () => window.clearInterval(t);
+  }, []);
+  return m;
+}
+
+const inMin = (m: number) => (m < 60 ? `dans ${m} min` : `dans ${Math.floor(m / 60)} h${m % 60 ? ` ${pad(m % 60)}` : ''}`);
+
+/** En haut de l'agenda du jour : ce que je fais maintenant, ce qui vient ensuite, et ce qui reste. */
+function NowNext({ entries }: { entries: Entry[] }) {
+  const { data } = useStore();
+  const { openDrawer, toggleDone } = useUI();
+  const now = useMinute();
+  const timed = entries
+    .filter((e) => e.it.time && !e.ghost && e.it.status !== 'done')
+    .map((e) => {
+      const start = minutesOf(e.it.time!);
+      const dur = e.it.duration || (isEvent(e.it) ? 60 : 30);
+      return { it: e.it, start, end: start + dur };
+    })
+    // Une journée de travail est un lieu, pas une activité : on montre ce qu'on y fait.
+    .filter((x) => !(isEvent(x.it) && x.end - x.start >= BG_MIN));
+  const cur = timed.filter((x) => x.start <= now && now < x.end);
+  const next = timed.filter((x) => x.start > now).sort((a, b) => a.start - b.start)[0];
+  const late = timed.filter((x) => !isEvent(x.it) && x.end <= now).length;
+  const left = entries.filter((e) => !e.ghost && !isEvent(e.it) && e.it.status !== 'done').length;
+  if (!cur.length && !next && !left) return null;
+  const row = (x: { it: Item; start: number; end: number }, tag: string, when: string) => (
+    <div key={x.it.id} className="nn-row" style={{ '--pc': colorOfItem(data, x.it) } as React.CSSProperties}>
+      <span className="nn-tag">{tag}</span>
+      {!isEvent(x.it) && (
+        <button className="ck sm" onClick={() => toggleDone(x.it.id)} aria-label="Marquer fait">
+          <Icon name="check" />
+        </button>
+      )}
+      <button className="nn-title" onClick={() => openDrawer({ type: 'item', id: x.it.id })}>
+        <b>{x.it.title}</b>
+        <span>{when}</span>
+      </button>
+    </div>
+  );
+  return (
+    <div className="nownext" aria-label="Maintenant et ensuite">
+      {cur.slice(0, 2).map((x) => row(x, 'Maintenant', `jusqu'à ${timeOf(x.end)}`))}
+      {next && row(next, 'Ensuite', `${timeOf(next.start)} · ${inMin(next.start - now)}`)}
+      {!cur.length && !next && <div className="nn-free">Plus rien à l&apos;agenda aujourd&apos;hui.</div>}
+      <div className="nn-foot">
+        {left > 0 ? `${left} tâche${left > 1 ? 's' : ''} à faire aujourd'hui` : 'Toutes les tâches du jour sont faites'}
+        {late > 0 && <span className="nn-late"> · {late} en retard</span>}
+      </div>
     </div>
   );
 }
@@ -798,7 +931,8 @@ function DayView() {
           <span className="on-touch">Appui long pour ajouter</span>
         </span>
       </div>
-      <AllDay entries={entries} />
+      {isToday && !phone && <NowNext entries={entries} />}
+      <AllDay entries={entries} withTasks={phone} />
       <AgendaScroll>
         <Timeline date={d} entries={entries} showHours nowLine />
       </AgendaScroll>
@@ -822,6 +956,7 @@ function DayView() {
         <MobileCalBar tabs={{ tab, setTab, nDay: entries.filter((e) => e.it.status !== 'done').length, nPlan: backlog(data).length + (isToday ? overdue(data).length : 0) }} />
         {tab === 'day' && (
           <div className="stack mday">
+            {isToday && <NowNext entries={entries} />}
             {isToday && <Alerts />}
             {nPlan > 0 && (
               <div className="plan-hint">
@@ -895,6 +1030,8 @@ function DayView() {
       <Compass />
       <ProjectLegend />
       <div className="today-grid">
+        {/* L'agenda d'abord, à gauche et large : c'est là qu'on voit sa journée. */}
+        {!narrow && agenda}
         <div className="stack today-main">
           {isToday && <Alerts />}
           {progress}
@@ -914,7 +1051,6 @@ function DayView() {
           {narrow && agenda}
           <PlanPanel flat />
         </div>
-        {!narrow && agenda}
       </div>
     </>
   );
@@ -937,21 +1073,119 @@ function AgendaScroll({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Libellé d'une plage de 7 jours : « 19 – 25 octobre » ou « 28 oct. – 3 nov. ». */
+function rangeLabel(from: string) {
+  const md = parseIso(from);
+  const ed = parseIso(addDays(from, 6));
+  return md.getMonth() === ed.getMonth() ? `${md.getDate()} – ${ed.getDate()} ${MONTHS[ed.getMonth()]}` : `${md.getDate()} ${MSHORT[md.getMonth()]} – ${ed.getDate()} ${MSHORT[ed.getMonth()]}`;
+}
+
+/*
+ * Semaine sur ordinateur : un ruban de 3 semaines (la précédente, celle choisie, la suivante) qu'on fait défiler
+ * jour par jour. On voit toujours 7 jours, par exemple du mardi dernier au mardi prochain.
+ */
+const SPAN_BEFORE = 7;
+const SPAN = 21;
+const GUTTER = 56;
+function WeekScroller({ onRange }: { onRange: (first: string) => void }) {
+  const { data } = useStore();
+  const { ui, set } = useUI();
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(0);
+  const m = mondayOf(ui.date);
+  const days = Array.from({ length: SPAN }, (_, i) => addDays(m, i - SPAN_BEFORE));
+  const dayW = Math.max(140, Math.floor((w - GUTTER) / 7));
+  const t = todayIso();
+  const { dayStart, dayEnd } = data.settings;
+  const hours = Array.from({ length: dayEnd - dayStart + 1 }, (_, i) => dayStart + i);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setW(el.clientWidth));
+    ro.observe(el);
+    setW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  // La semaine choisie s'affiche en entier ; à l'ouverture, on se place aussi sur l'heure actuelle.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !w) return;
+    el.scrollLeft = SPAN_BEFORE * dayW;
+    onRange(days[SPAN_BEFORE]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [m, dayW]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.scrollTop = Math.max(0, (new Date().getHours() - dayStart - 1) * HOUR_PX);
+  }, [dayStart]);
+  const raf = useRef(0);
+  const onScroll = () => {
+    cancelAnimationFrame(raf.current);
+    raf.current = requestAnimationFrame(() => {
+      const el = ref.current;
+      if (!el) return;
+      const i = Math.min(SPAN - 7, Math.max(0, Math.round(el.scrollLeft / dayW)));
+      onRange(days[i]);
+    });
+  };
+  const byDay = days.map((d) => entriesOn(data, d, projFilter(ui.calProject)));
+  return (
+    <div className="wscroll" ref={ref} onScroll={onScroll}>
+      <div className="wsgrid" style={{ gridTemplateColumns: `${GUTTER}px repeat(${SPAN}, ${dayW}px)` }}>
+        <div className="ws-corner" />
+        {days.map((d) => {
+          const dd = parseIso(d);
+          return (
+            <button key={`h-${d}`} className={`ws-day${d === t ? ' today' : ''}${parseIso(d).getDay() === 1 ? ' monday' : ''}`} onClick={() => set({ date: d, cal: 'day' })} title="Voir cette journée">
+              <b>{DSHORT[dd.getDay()]}</b> <span>{dd.getDate()}</span>
+              {dd.getDate() === 1 || d === days[0] ? <em>{MSHORT[dd.getMonth()]}</em> : null}
+            </button>
+          );
+        })}
+        <div className="ws-label">Journée</div>
+        {days.map((d, i) => (
+          <div key={`a-${d}`} className={`ws-cell${parseIso(d).getDay() === 1 ? ' monday' : ''}`} data-drop="date" data-date={d}>
+            {byDay[i]
+              .filter((e) => !e.it.time)
+              .map((e) => (
+                <Card key={`${e.it.id}-${d}`} it={e.it} o={{ compact: true, noDate: true, ghost: e.ghost }} />
+              ))}
+          </div>
+        ))}
+        <div className="ws-hours" aria-hidden="true">
+          {hours.map((h) => (
+            <div key={h} style={{ height: HOUR_PX }}>
+              {pad(h)}:00
+            </div>
+          ))}
+        </div>
+        {days.map((d, i) => (
+          <div key={`t-${d}`} className={`ws-col${d === t ? ' today' : ''}${parseIso(d).getDay() === 1 ? ' monday' : ''}${[0, 6].includes(parseIso(d).getDay()) ? ' weekend' : ''}`}>
+            <Timeline date={d} entries={byDay[i]} showHours={false} nowLine dense />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function WeekView() {
   const { data } = useStore();
   const { ui, set } = useUI();
   const narrow = useNarrow();
   const m = mondayOf(ui.date);
-  const end = addDays(m, 6);
-  const md = parseIso(m);
-  const ed = parseIso(end);
-  const label = md.getMonth() === ed.getMonth() ? `${md.getDate()} – ${ed.getDate()} ${MONTHS[ed.getMonth()]}` : `${md.getDate()} ${MSHORT[md.getMonth()]} – ${ed.getDate()} ${MSHORT[ed.getMonth()]}`;
+  const [first, setFirst] = useState(m);
   const t = todayIso();
   const days = Array.from({ length: 7 }, (_, i) => addDays(m, i));
   const byDay = days.map((d) => entriesOn(data, d, projFilter(ui.calProject)));
   return (
     <>
-      {narrow ? <MobileCalBar /> : <Head eyebrow={`Semaine ${isoWeek(m)}`} title={label} actions={<CalNav />} />}
+      {narrow ? (
+        <MobileCalBar />
+      ) : (
+        <Head eyebrow={`Semaine ${isoWeek(first)}${first !== mondayOf(first) ? ` – ${isoWeek(addDays(first, 6))}` : ''}`} title={rangeLabel(first)} lede="Fais défiler de côté pour voir les jours d'avant ou d'après." actions={<CalNav />} />
+      )}
       <Compass />
       <ProjectLegend />
       <div className="stack">
@@ -975,38 +1209,7 @@ function WeekView() {
             })}
           </div>
         ) : (
-          <div className="wgrid">
-            <div className="wg-head">
-              <div />
-              {days.map((d) => {
-                const dd = parseIso(d);
-                return (
-                  <button key={d} className={`wg-day${d === t ? ' today' : ''}`} onClick={() => set({ date: d, cal: 'day' })}>
-                    <b>{DSHORT[dd.getDay()]}</b> <span>{dd.getDate()}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="wg-allday">
-              <div className="hint">Journée</div>
-              {days.map((d, i) => {
-                const untimed = byDay[i].filter((e) => !e.it.time);
-                return (
-                  <div key={d} className="wg-cell" data-drop="date" data-date={d}>
-                    {untimed.map((e) => (
-                      <Card key={`${e.it.id}-${d}`} it={e.it} o={{ compact: true, noDate: true, ghost: e.ghost }} />
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-            <div className="wg-body">
-              <Timeline date={days[0]} entries={byDay[0]} showHours nowLine />
-              {days.slice(1).map((d, i) => (
-                <Timeline key={d} date={d} entries={byDay[i + 1]} showHours={false} nowLine />
-              ))}
-            </div>
-          </div>
+          <WeekScroller onRange={setFirst} />
         )}
         <PlanPanel flat />
       </div>
