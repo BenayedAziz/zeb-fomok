@@ -59,6 +59,7 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
   const [draft, setDraft] = useState('');
   const [thinking, setThinking] = useState(false);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [about, setAbout] = useState('');
   const [manualDomains, setManualDomains] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const chatRef = useRef<HTMLDivElement>(null);
@@ -105,6 +106,7 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
         return;
       }
       const s = body.summary as { domains?: { name?: string }[]; goals?: { title?: string; horizon?: string }[]; projects?: { name?: string; domain?: string; outcome?: string; goal?: string; nextAction?: string }[] };
+      setAbout(typeof (body.summary as { about?: unknown }).about === 'string' ? ((body.summary as { about: string }).about || '').slice(0, 2000) : '');
       setSummary({
         domains: (s.domains || []).filter((d) => d?.name).map((d) => ({ name: d.name!.slice(0, 60), on: true })),
         goals: (s.goals || []).filter((g) => g?.title).map((g) => ({ title: g.title!.slice(0, 200), horizon: (['vision', 'year', 'behavior'].includes(g.horizon || '') ? g.horizon : 'year') as Horizon, on: true })),
@@ -147,6 +149,7 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
         if (p.nextAction) items.push({ title: p.nextAction, status: 'todo', projectId: id, domainId });
       });
     store.bulk({ domains, goals, projects, items });
+    if (about.trim()) store.setSettings({ about: [store.get().settings.about, about.trim()].filter(Boolean).join('\n') });
     setStep('tools');
   };
 
@@ -349,6 +352,11 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
                 </label>
               ))}
             </div>
+          </div>
+          <div className="sec">
+            <h2>Ce que je retiens de toi</h2>
+            <p className="hint" style={{ margin: '0 0 8px' }}>Ton travail, tes horaires, tes habitudes : je m&apos;en sers pour ranger et planifier tes journées. Corrige si besoin.</p>
+            <textarea className="inp" rows={4} value={about} onChange={(e) => setAbout(e.target.value)} placeholder="Ex. Travaille chez VINCI Energies du lundi au vendredi, 9h-18h. Sport le mardi soir." />
           </div>
           <div className="vh-actions">
             <button className="btn primary lg" onClick={createFromSummary}>

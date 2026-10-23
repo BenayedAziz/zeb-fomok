@@ -113,6 +113,12 @@ export interface Settings {
   reviewEvery: number;
   /** Personnages nuages sur les cartes (à couper pour un usage plus pro). */
   showMascots: boolean;
+  /** Ce que l'IA retient de la personne : travail principal, horaires, habitudes. Modifiable dans les Réglages. */
+  about?: string;
+  /** Préparer tout seul la journée du lendemain, une fois par jour. */
+  autoPlan?: boolean;
+  /** Dernière journée préparée automatiquement (AAAA-MM-JJ). */
+  lastPrepared?: string | null;
   /** Clair, sombre, ou comme l'appareil. */
   theme?: 'auto' | 'light' | 'dark';
   /** Ville, pour que l'IA trouve les bons liens (restaurant, salle, médecin). */
@@ -163,4 +169,22 @@ export interface AiItem {
   place?: string | null;
   newProject?: { name?: string; domainId?: string | null; outcome?: string } | null;
   reason?: string;
+}
+
+/** Une demande faite à l'appli et comprise par l'IA (« range Vinci dans Travail », « planifie ma journée »). */
+export interface AiAction {
+  type?: string;
+  projectId?: string;
+  itemId?: string;
+  name?: string;
+  title?: string;
+  domainId?: string | null;
+  domainName?: string;
+  parentId?: string | null;
+  date?: string | null;
+  time?: string | null;
+  duration?: number | null;
+  status?: string;
+  kind?: string;
+  fact?: string;
 }

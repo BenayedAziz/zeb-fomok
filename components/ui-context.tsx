@@ -1,11 +1,11 @@
 'use client';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
-import type { AiItem, Data, Item } from '@/lib/types';
-import { PR, REC, ST, contextsOf, projectPath, projectStats, domainsSorted, freeColor, guessContext, mergeLinks, projectsSorted, recLabel } from '@/lib/gtd';
+import type { AiAction, AiItem, Data, Item, Project } from '@/lib/types';
+import { COLORS, PR, REC, ST, contextsOf, entriesOn, familyIds, isEvent, isOpen, list, projectPath, projectStats, sortItems, domainsSorted, freeColor, guessContext, mergeLinks, projectsSorted, recLabel } from '@/lib/gtd';
 import { mascotFor } from '@/lib/mascots';
 import { applyTheme } from '@/lib/theme';
-import { isDate, isTime, nextOccurrence, pad, relDate, todayIso } from '@/lib/dates';
+import { DAYS, addDays, isDate, isTime, minutesOf, nextOccurrence, pad, parseIso, relDate, timeOf, todayIso } from '@/lib/dates';
 
 export type View =
   | 'day' | 'inbox' | 'next' | 'waiting' | 'someday' | 'projects' | 'project' | 'pins'
@@ -47,6 +47,8 @@ interface UI {
   dance: { key: number; src: string | null; text?: string; big: boolean } | null;
   /** L'IA cherche un lien pour passer à l'action. */
   linking: Record<string, boolean>;
+  /** Jour en cours de planification par l'IA. */
+  planning: string | null;
   aiOff: boolean;
   importSource: string | null;
 }
@@ -64,6 +66,8 @@ interface UIApi {
   aiSort: (id: string) => Promise<void>;
   /** Ajout direct dans l'agenda : l'IA choisit seulement le projet et le domaine, sans toucher au reste. */
   fileWithAi: (id: string) => Promise<void>;
+  /** L'IA place les tâches à planifier dans les créneaux libres du jour. */
+  planDay: (date: string, opts?: { auto?: boolean }) => Promise<void>;
   /** Cherche sur le web le lien qui permet d'agir (réserver, s'inscrire…) et l'ajoute à l'élément. */
   findLinks: (id: string, query?: string) => Promise<void>;
   toggleDone: (id: string) => void;
@@ -88,7 +92,22 @@ export function aiContext(d: Data) {
     domains: domainsSorted(d).map((x) => ({ id: x.id, name: x.name })),
     projects: projectsSorted(d)
       .filter((p) => p.status !== 'done')
-      .map((p) => ({ id: p.id, name: projectPath(d, p), domain: p.domainId ? d.domains[p.domainId]?.name : undefined, outcome: p.outcome || undefined })),
+      .map((p) => ({
+        id: p.id,
+        name: projectPath(d, p),
+        domain: p.domainId ? d.domains[p.domainId]?.name : undefined,
+        outcome: p.outcome || undefined,
+        description: p.description || undefined,
+        // La mémoire du projet : ce qui est en cours dedans.
+        doing: projectStats(d, p.id).open.slice(0, 3).map((i) => i.title),
+      })),
+    about: d.settings.about?.trim() || undefined,
+    // Pour les demandes du genre « déplace la réunion à jeudi » : ce qui est en cours et les événements à venir.
+    items: list(d.items)
+      .filter((i) => i.status !== 'done' && (!isEvent(i) || !i.date || i.date >= addDays(todayIso(), -1) || i.recurrence))
+      .sort(sortItems)
+      .slice(0, 150)
+      .map((i) => ({ id: i.id, title: i.title, kind: i.kind || 'task', date: i.date || null, time: i.time || null, project: i.projectId && d.projects[i.projectId] ? d.projects[i.projectId].name : null })),
   };
 }
 
@@ -146,6 +165,103 @@ function itemFromAi(d: Data, r: AiItem): Partial<Item> {
   return p;
 }
 
+type StoreApi = ReturnType<typeof useStore>;
+const norm = (x: string) => x.trim().toLowerCase();
+
+/**
+ * Exécute les demandes faites à l'appli et comprises par l'IA.
+ * Chaque changement garde de quoi revenir en arrière (bouton Annuler de la notification).
+ */
+function runActions(s: StoreApi, acts: AiAction[]) {
+  const undo: (() => void)[] = [];
+  const chips: string[] = [];
+  let planDate: string | null = null;
+  const domainFor = (a: AiAction): string | null | undefined => {
+    const d = s.get();
+    if (a.domainId && d.domains[a.domainId]) return a.domainId;
+    if (typeof a.domainName === 'string' && a.domainName.trim()) {
+      const found = Object.values(d.domains).find((x) => norm(x.name) === norm(a.domainName!));
+      if (found) return found.id;
+      const n = Object.keys(d.domains).length;
+      const dom = s.addDomain({ name: a.domainName.trim().slice(0, 60), color: COLORS[n % COLORS.length], position: n });
+      undo.push(() => s.removeDomain(dom.id));
+      return dom.id;
+    }
+    return undefined;
+  };
+  acts.forEach((a) => {
+    const d = s.get();
+    if (a.type === 'update_project' && a.projectId && d.projects[a.projectId]) {
+      const p = d.projects[a.projectId];
+      const patch: Partial<Project> = {};
+      if (typeof a.name === 'string' && a.name.trim()) patch.name = a.name.trim().slice(0, 120);
+      const dom = domainFor(a);
+      if (dom !== undefined) patch.domainId = dom;
+      if (a.parentId && d.projects[a.parentId] && !familyIds(d, p.id).includes(a.parentId)) patch.parentId = a.parentId;
+      if (!Object.keys(patch).length) return;
+      const prev = Object.fromEntries(Object.keys(patch).map((k) => [k, p[k as keyof Project] ?? null])) as Partial<Project>;
+      s.updateProject(p.id, patch);
+      undo.push(() => s.updateProject(p.id, prev));
+      const after = s.get().projects[p.id];
+      chips.push(`${after.name}${patch.domainId ? ` → ${s.get().domains[patch.domainId]?.name}` : ''}${patch.parentId ? ` → dans ${d.projects[patch.parentId].name}` : ''}`);
+      return;
+    }
+    if (a.type === 'update_item' && a.itemId && d.items[a.itemId]) {
+      const it = d.items[a.itemId];
+      const patch: Partial<Item> = {};
+      if (typeof a.title === 'string' && a.title.trim()) patch.title = a.title.trim().slice(0, 300);
+      if (a.date === null || isDate(a.date)) patch.date = a.date;
+      if (a.time === null || isTime(a.time)) patch.time = a.time;
+      const dur = Number(a.duration);
+      if (dur > 0 && dur <= 1440) patch.duration = Math.round(dur);
+      if (a.projectId && d.projects[a.projectId]) {
+        patch.projectId = a.projectId;
+        patch.domainId = d.projects[a.projectId].domainId || it.domainId || null;
+      }
+      const dom = domainFor(a);
+      if (dom !== undefined) patch.domainId = dom;
+      if (a.status && ['todo', 'waiting', 'someday', 'doing'].includes(a.status)) patch.status = a.status as Item['status'];
+      if (a.kind === 'task' || a.kind === 'event') patch.kind = a.kind;
+      if (patch.time && !patch.date && !it.date) patch.date = todayIso();
+      if (!Object.keys(patch).length) return;
+      const prev = Object.fromEntries(Object.keys(patch).map((k) => [k, it[k as keyof Item] ?? null])) as Partial<Item>;
+      s.updateItem(it.id, patch);
+      undo.push(() => s.updateItem(it.id, prev));
+      const after = s.get().items[it.id];
+      chips.push(`${after.title.slice(0, 40)}${after.date ? ` · ${relDate(after.date)}${after.time ? ` ${after.time}` : ''}` : ''}`);
+      return;
+    }
+    if (a.type === 'complete_item' && a.itemId && d.items[a.itemId] && d.items[a.itemId].status !== 'done') {
+      const it = d.items[a.itemId];
+      s.updateItem(it.id, { status: 'done', doneAt: todayIso() });
+      undo.push(() => s.updateItem(it.id, { status: it.status, doneAt: null }));
+      chips.push(`Fait : ${it.title.slice(0, 40)}`);
+      return;
+    }
+    if (a.type === 'delete_item' && a.itemId && d.items[a.itemId]) {
+      const prev = s.removeItem(a.itemId);
+      if (prev) {
+        undo.push(() => s.restore('items', prev));
+        chips.push(`Corbeille : ${prev.title.slice(0, 40)}`);
+      }
+      return;
+    }
+    if (a.type === 'plan_day') {
+      planDate = isDate(a.date) ? a.date : todayIso();
+      return;
+    }
+    if (a.type === 'remember' && typeof a.fact === 'string' && a.fact.trim()) {
+      const before = s.get().settings.about || '';
+      const fact = a.fact.trim().slice(0, 300);
+      if (before.toLowerCase().includes(fact.toLowerCase())) return;
+      s.setSettings({ about: `${before.trim()}${before.trim() ? '\n' : ''}${fact}`.slice(-3000) });
+      undo.push(() => s.setSettings({ about: before }));
+      chips.push(`Retenu : ${fact.slice(0, 50)}`);
+    }
+  });
+  return { undo, chips, planDate };
+}
+
 /* Éléments de l'inbox déjà proposés à l'IA au chargement, pour ne pas les renvoyer en boucle. */
 const AUTO_KEY = 'sc_ai_auto_tried';
 const readTried = (): string[] => {
@@ -185,6 +301,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     justDone: {},
     linking: {},
     dance: null,
+    planning: null,
     aiOff: false,
     importSource: null,
   }));
@@ -237,6 +354,113 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
   const findLinksRef = useRef(findLinks);
   findLinksRef.current = findLinks;
 
+  /**
+   * Planifie un jour avec l'IA : les tâches à planifier, celles prévues ce jour sans heure et celles en retard
+   * sont placées dans les créneaux libres (celles du travail dans la journée de travail), le reste part plus tard.
+   */
+  const planDay = useCallback(
+    async (date: string, opts: { auto?: boolean } = {}) => {
+      const s = storeRef.current;
+      const d = s.get();
+      const t = todayIso();
+      const tasks = list(d.items)
+        .filter((it) => isOpen(it) && !it.time && (!it.date || it.date === date || (it.date < t && date >= t)))
+        .sort(sortItems)
+        .slice(0, 40);
+      if (!tasks.length) {
+        if (!opts.auto) toast({ text: 'Rien à planifier : tout a déjà sa place.' });
+        return;
+      }
+      const st = d.settings;
+      const now = new Date();
+      const nowMin = Math.ceil((now.getHours() * 60 + now.getMinutes() + 5) / 15) * 15;
+      const from = date === t ? Math.max(st.dayStart * 60, nowMin) : st.dayStart * 60;
+      if (from >= (st.dayEnd + 1) * 60) {
+        if (!opts.auto) toast({ text: "La journée est finie : je planifie demain à la place.", actions: [{ label: 'Planifier demain', run: () => planDayRef.current(addDays(t, 1)) }] });
+        return;
+      }
+      const projName = (id?: string | null) => (id && d.projects[id] ? projectPath(d, d.projects[id]) : null);
+      const events = entriesOn(d, date)
+        .filter((e) => e.it.time)
+        .map((e) => ({ title: e.it.title, time: e.it.time!, duration: e.it.duration || (isEvent(e.it) ? 60 : 30), project: projName(e.it.projectId) }));
+      setUi((u) => ({ ...u, planning: date }));
+      try {
+        const res = await fetch('/api/plan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            date,
+            weekday: DAYS[parseIso(date).getDay()],
+            from: timeOf(from),
+            dayStart: `${pad(st.dayStart)}:00`,
+            dayEnd: `${pad(st.dayEnd + 1 > 23 ? 23 : st.dayEnd + 1)}:00`,
+            about: st.about || '',
+            events,
+            tasks: tasks.map((it) => ({
+              id: it.id,
+              title: it.title,
+              project: projName(it.projectId),
+              domain: it.domainId ? d.domains[it.domainId]?.name : it.projectId ? d.domains[d.projects[it.projectId]?.domainId || '']?.name : null,
+              priority: it.priority || null,
+              quick: !!it.quick,
+              duration: it.duration || null,
+              context: it.context || null,
+              overdue: !!(it.date && it.date < t),
+              plannedToday: it.date === date,
+            })),
+          }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (!opts.auto) toast({ text: AI_ERRORS[body.error] || "La planification n'a pas marché. Réessaie dans un moment." });
+          return;
+        }
+        const r = body.result || {};
+        const ids = new Set(tasks.map((x) => x.id));
+        const prev: [string, Partial<Item>][] = [];
+        const lo = st.dayStart * 60;
+        const hi = (st.dayEnd + 1) * 60;
+        let placed = 0;
+        let later = 0;
+        (Array.isArray(r.plan) ? r.plan : []).forEach((x: { id?: string; time?: string; duration?: number }) => {
+          const it = x?.id && ids.has(x.id) ? s.get().items[x.id] : null;
+          if (!it || !isTime(x.time) || minutesOf(x.time) < lo || minutesOf(x.time) >= hi) return;
+          const dur = Math.min(600, Math.max(15, Math.round(Number(x.duration) / 15) * 15 || it.duration || 30));
+          prev.push([it.id, { date: it.date ?? null, time: it.time ?? null, duration: it.duration ?? null, status: it.status }]);
+          s.updateItem(it.id, { date, time: x.time, duration: dur, status: 'todo' });
+          ids.delete(it.id);
+          placed++;
+        });
+        (Array.isArray(r.later) ? r.later : []).forEach((x: { id?: string; date?: string }) => {
+          const it = x?.id && ids.has(x.id) ? s.get().items[x.id] : null;
+          if (!it || !isDate(x.date) || x.date < t) return;
+          prev.push([it.id, { date: it.date ?? null, time: it.time ?? null }]);
+          s.updateItem(it.id, { date: x.date, time: null });
+          later++;
+        });
+        if (!placed && !later) {
+          if (!opts.auto) toast({ text: "Je n'ai trouvé aucun créneau libre ce jour-là." });
+          return;
+        }
+        const label = date === t ? 'ta journée' : date === addDays(t, 1) ? 'ta journée de demain' : `ta journée ${relDate(date).toLowerCase()}`;
+        toast({
+          text: typeof r.summary === 'string' && r.summary.trim() ? `${opts.auto ? `J'ai préparé ${label}. ` : ''}${r.summary.trim().slice(0, 220)}` : `${placed} tâche${placed > 1 ? 's' : ''} placée${placed > 1 ? 's' : ''} dans ${label}${later ? `, ${later} pour plus tard` : ''}.`,
+          actions: [
+            { label: 'Voir', run: () => setUi((u) => ({ ...u, view: 'day', cal: 'day', date, drawer: null })) },
+            { label: 'Annuler', run: () => prev.forEach(([id, p]) => s.updateItem(id, p)) },
+          ],
+        });
+      } catch {
+        if (!opts.auto) toast({ text: 'Pas de connexion : réessaie quand tu es en ligne.' });
+      } finally {
+        setUi((u) => ({ ...u, planning: null }));
+      }
+    },
+    [toast],
+  );
+  const planDayRef = useRef(planDay);
+  planDayRef.current = planDay;
+
   const go = useCallback((view: View, extra?: { projectId?: string; domain?: string | null }) => {
     setUi((u) => ({
       ...u,
@@ -257,14 +481,17 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
 
   /** Applique la réponse de l'IA : un ou plusieurs éléments, éventuellement des épingles et un nouveau projet. */
   const applyAI = useCallback(
-    (placeholderId: string, raw: AiItem[]) => {
+    (placeholderId: string, raw: AiItem[], rawActions: AiAction[] = []) => {
       const s = storeRef.current;
       const d = s.get();
       const results = raw.filter((r) => r && typeof r === 'object').slice(0, 20);
-      if (!results.length) {
+      const acts = rawActions.filter((x) => x && typeof x === 'object').slice(0, 30);
+      if (!results.length && !acts.length) {
         toast({ text: "L'IA n'a rien trouvé à ranger : c'est dans l'inbox." });
         return;
       }
+      // Les demandes faites à l'appli (« range Vinci dans Travail »…) sont exécutées, avec de quoi annuler.
+      const done = runActions(s, acts);
       const created: { coll: 'items' | 'pins' | 'projects'; id: string }[] = [];
       const newProjects: Record<string, string> = {};
       const chips: string[] = [];
@@ -336,9 +563,20 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       if (!placeholderUsed) s.removeItem(placeholderId, { forget: true });
 
       const n = results.length;
+      chips.unshift(...done.chips);
       const quickId = [placeholderId, ...created.filter((c) => c.coll === 'items').map((c) => c.id)].find((x) => s.get().items[x]?.quick);
       toast({
-        text: quickId ? `${n > 1 ? `${n} éléments rangés. ` : ''}Moins de 2 min : fais-le maintenant.` : n > 1 ? `${n} éléments rangés` : 'Rangé',
+        text: quickId
+          ? `${n > 1 ? `${n} éléments rangés. ` : ''}Moins de 2 min : fais-le maintenant.`
+          : !n
+            ? done.chips.length
+              ? "C'est fait"
+              : done.planDate
+                ? 'Je planifie ta journée…'
+                : "Je n'ai pas trouvé quoi modifier : précise le nom du projet ou de l'élément."
+            : n > 1
+              ? `${n} éléments rangés`
+              : 'Rangé',
         chips: chips.slice(0, 5),
         actions: [
           ...(quickId ? [{ label: "C'est fait", run: () => toggleDoneRef.current(quickId) }] : []),
@@ -346,6 +584,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
           {
             label: 'Annuler',
             run: () => {
+              done.undo.reverse().forEach((f) => f());
               created.forEach((c) => (c.coll === 'items' ? s.removeItem(c.id, { forget: true }) : c.coll === 'pins' ? s.removePin(c.id, { forget: true }) : s.removeProject(c.id)));
               if (placeholderUsed) {
                 const raw0 = s.get().items[placeholderId]?.raw;
@@ -355,6 +594,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
           },
         ],
       });
+      if (done.planDate) void planDayRef.current(done.planDate);
     },
     [toast],
   );
@@ -385,7 +625,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
         setUi((u) => (u.aiOff ? { ...u, aiOff: false } : u));
         const result = body.result || {};
         const arr: AiItem[] = Array.isArray(result.items) ? result.items : Array.isArray(result) ? result : [result];
-        if (storeRef.current.get().items[id]) applyAI(id, arr);
+        if (storeRef.current.get().items[id]) applyAI(id, arr.filter((x) => x && (x.title || x.kind)), Array.isArray(result.actions) ? result.actions : []);
       } catch {
         toast({ text: "Pas de connexion : c'est dans l'inbox." });
       } finally {
@@ -481,6 +721,31 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       })
       .catch(() => {});
   }, [store.ready, aiSort]);
+
+  /*
+   * Une fois par jour, l'appli prépare la journée : le soir (dès 17 h) celle du lendemain,
+   * sinon celle du jour si elle n'a pas encore été préparée.
+   */
+  const prepRan = useRef(false);
+  useEffect(() => {
+    if (!store.ready || prepRan.current) return;
+    prepRan.current = true;
+    const st = storeRef.current.get().settings;
+    if (st.autoPlan === false || storeRef.current.mode !== 'db') return;
+    const target = new Date().getHours() >= 17 ? addDays(todayIso(), 1) : todayIso();
+    if (st.lastPrepared && st.lastPrepared >= target) return;
+    const timer = setTimeout(() => {
+      fetch('/api/connect/status')
+        .then((r) => (r.ok ? r.json() : {}))
+        .then((x: { ai?: boolean }) => {
+          if (!x.ai) return;
+          storeRef.current.setSettings({ lastPrepared: target });
+          void planDayRef.current(target, { auto: true });
+        })
+        .catch(() => {});
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [store.ready]);
 
   const aiSortRef = useRef(aiSort);
   aiSortRef.current = aiSort;
@@ -611,12 +876,13 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       capture,
       aiSort,
       fileWithAi,
+      planDay,
       findLinks,
       toggleDone,
       schedule,
       removeItem,
     }),
-    [ui, set, go, toast, toastState, dismissToast, capture, aiSort, fileWithAi, findLinks, toggleDone, schedule, removeItem],
+    [ui, set, go, toast, toastState, dismissToast, capture, aiSort, fileWithAi, planDay, findLinks, toggleDone, schedule, removeItem],
   );
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
 }
