@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import type { Item } from '@/lib/types';
 import { useUI, type CalMode } from '../ui-context';
@@ -316,7 +316,27 @@ function layout(entries: Entry[], minPx = 26): Placed[] {
   return [...bgs, ...items];
 }
 
-function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
+/** Largeur sous laquelle une colonne partagée devient illisible : on superpose en cascade plutôt que de couper en lamelles. */
+const LANE_MIN = 104;
+
+/**
+ * Position horizontale d'un bloc dans une colonne de largeur `w` (px).
+ * Assez de place : côte à côte. Sinon, en cascade comme un paquet de cartes : chaque bloc garde presque
+ * toute la largeur et son titre ; le plus tardif passe devant (ordre du DOM), décalé pour laisser voir celui de dessous.
+ */
+function geometry(p: Placed, w: number): { left: number | string; width: number | string; stacked?: boolean } {
+  if (p.bg) return { left: 2, width: 'calc(100% - 4px)' };
+  const x0 = p.inset ? 28 : 2;
+  if (!w) return { left: `calc(${(p.lane / p.lanes) * 100}% + ${x0}px)`, width: `calc(${100 / p.lanes}% - ${x0 + 2}px)` };
+  const avail = Math.max(40, w - x0 - 2);
+  if (p.lanes === 1) return { left: x0, width: avail };
+  const per = avail / p.lanes;
+  if (per >= LANE_MIN) return { left: x0 + p.lane * per, width: per - 3 };
+  const step = Math.max(6, Math.min(24, (avail - 96) / (p.lanes - 1)));
+  return { left: x0 + p.lane * step, width: avail - p.lane * step, stacked: true };
+}
+
+function TimeBlock({ p, dayStart, colW }: { p: Placed; dayStart: number; colW: number }) {
   const store = useStore();
   const { ui, openDrawer, toggleDone, toast } = useUI();
   const it = p.e.it;
@@ -335,6 +355,7 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
   const dur = drag?.mode === 'resize' ? Math.max(SNAP, snap(p.end - p.start + dyMin)) : p.end - p.start;
   const top = ((start - dayStart * 60) / 60) * HOUR_PX;
   const height = Math.max((dur / 60) * HOUR_PX - 2, 24);
+  const geo = geometry(p, colW);
 
   const begin = (mode: 'move' | 'resize') => (e: React.PointerEvent) => {
     if (ghost || e.button !== 0) return;
@@ -385,12 +406,12 @@ function TimeBlock({ p, dayStart }: { p: Placed; dayStart: number }) {
   return (
     <div
       ref={el}
-      className={`tblock${ev ? ' event' : ''}${p.bg ? ' bg' : ''}${ghost ? ' ghost' : ''}${it.status === 'done' ? ' done' : ''}${drag ? ' dragging' : ''}${drag && held.current ? ' held' : ''}${ui.justDone[it.id] ? ' just-done' : ''}`}
+      className={`tblock${ev ? ' event' : ''}${p.bg ? ' bg' : ''}${geo.stacked ? ' stacked' : ''}${ghost ? ' ghost' : ''}${it.status === 'done' ? ' done' : ''}${drag ? ' dragging' : ''}${drag && held.current ? ' held' : ''}${ui.justDone[it.id] ? ' just-done' : ''}`}
       style={{
         top,
         height,
-        left: p.bg ? 2 : `calc(${(p.lane / p.lanes) * 100}% + ${p.inset ? 26 : 2}px)`,
-        width: p.bg ? 'calc(100% - 4px)' : `calc(${100 / p.lanes}% - ${p.inset ? 30 : 4}px)`,
+        left: geo.left,
+        width: geo.width,
         transform: drag?.dx ? `translateX(${drag.dx}px)` : undefined,
         '--pc': colorOfItem(store.data, it),
       } as React.CSSProperties}
@@ -532,6 +553,20 @@ function QuickAdd({ date, start, end, anchor, onClose }: { date: string; start: 
   );
 }
 
+/** Largeur d'un élément, suivie quand la fenêtre ou le panneau change de taille. */
+function useWidth(ref: React.RefObject<HTMLElement | null>) {
+  const [w, setW] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setW(el.clientWidth);
+    const ro = new ResizeObserver(() => setW(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return w;
+}
+
 function Timeline({ date, entries, showHours, nowLine, dense }: { date: string; entries: Entry[]; showHours: boolean; nowLine: boolean; dense?: boolean }) {
   const { data } = useStore();
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -539,6 +574,7 @@ function Timeline({ date, entries, showHours, nowLine, dense }: { date: string; 
   const tlEl = useRef<HTMLDivElement>(null);
   const hold = useHold();
   useNoScroll(tlEl, !!draft?.drawing);
+  const colW = useWidth(tlEl);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const { dayStart, dayEnd } = data.settings;
   const hours = Array.from({ length: dayEnd - dayStart + 1 }, (_, i) => dayStart + i);
@@ -608,7 +644,7 @@ function Timeline({ date, entries, showHours, nowLine, dense }: { date: string; 
         ))}
         {showNow && <div className="tl-now" style={{ top: ((nowMin - dayStart * 60) / 60) * HOUR_PX }} />}
         {placed.map((p) => (
-          <TimeBlock key={`${p.e.it.id}-${p.e.date}`} p={p} dayStart={dayStart} />
+          <TimeBlock key={`${p.e.it.id}-${p.e.date}`} p={p} dayStart={dayStart} colW={colW} />
         ))}
         {draft && (
           <div

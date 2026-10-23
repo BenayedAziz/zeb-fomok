@@ -1547,3 +1547,7 @@ button.dom-title:hover { color: var(--sky-700); }
 .legend-item.sub { font-size: 11.5px; opacity: 0.9; }
 .ws-label, .ws-cell { position: sticky; top: 39px; z-index: 7; background: var(--cloud); }
 .ws-label { z-index: 8; }
+
+/* Blocs qui se chevauchent dans une colonne étroite : en cascade, celui qu'on survole passe devant. */
+.tblock.stacked { box-shadow: var(--shadow-sm), inset 0 0 0 1.5px var(--sky-200), -3px 0 8px -4px rgba(11, 29, 51, 0.25); }
+.tblock.stacked:hover { z-index: 5; }
