@@ -4,6 +4,7 @@ import { useStore } from '@/lib/store';
 import type { AiItem, Data, Item } from '@/lib/types';
 import { PR, REC, ST, contextsOf, projectPath, projectStats, domainsSorted, freeColor, guessContext, mergeLinks, projectsSorted, recLabel } from '@/lib/gtd';
 import { mascotFor } from '@/lib/mascots';
+import { applyTheme } from '@/lib/theme';
 import { isDate, isTime, nextOccurrence, pad, relDate, todayIso } from '@/lib/dates';
 
 export type View =
@@ -448,6 +449,12 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     },
     [toast],
   );
+
+  // Le thème choisi (clair, sombre, comme l'appareil) suit le compte, une fois les réglages chargés.
+  const theme = store.data.settings.theme;
+  useEffect(() => {
+    if (store.ready) applyTheme(theme);
+  }, [store.ready, theme]);
 
   /**
    * À l'ouverture : ce qui attend dans l'inbox sans être passé par l'IA (capturé avant que l'IA soit branchée,

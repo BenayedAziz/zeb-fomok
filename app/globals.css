@@ -28,7 +28,7 @@
 }
 /* « Ciel de nuit » */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --sky-50: #0D1626; --sky-100: #1B2A45; --sky-200: #263A5C; --sky-300: #8FCBFF; --sky-500: #6DB9FF; --sky-700: #A5D6FF;
     --cloud: #15223A; --bg-gradient: linear-gradient(180deg, #0D1626 0%, #111C30 70%); --dot: rgba(143, 203, 255, 0.10);
     --done-bg: #1A263C; --done-stripe: #223150;
@@ -43,6 +43,22 @@
     --scrim: rgba(0, 0, 0, 0.5);
     color-scheme: dark;
   }
+}
+/* Choix fait dans l'appli : sombre même si l'appareil est en clair (et l'inverse avec data-theme="light"). */
+:root[data-theme="dark"] {
+  --sky-50: #0D1626; --sky-100: #1B2A45; --sky-200: #263A5C; --sky-300: #8FCBFF; --sky-500: #6DB9FF; --sky-700: #A5D6FF;
+  --cloud: #15223A; --bg-gradient: linear-gradient(180deg, #0D1626 0%, #111C30 70%); --dot: rgba(143, 203, 255, 0.10);
+  --done-bg: #1A263C; --done-stripe: #223150;
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25); --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.35); --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.45);
+  --focus-ring: 0 0 0 3px rgba(143, 203, 255, 0.35);
+  --side: rgba(21, 34, 58, 0.78); --sunk: #111D31;
+  --ink: #EAF3FF; --muted: #93A4BC; --faint: #6F819B; --line: #22324F;
+  --accent-ink: #0D1626;
+  --high: #F2776D; --med: #F0B457; --low: #6F819B;
+  --ok: #4CC892; --ok-soft: #173A33; --warn: #F0B457; --warn-soft: #3A2F1F; --crit: #F2776D; --crit-soft: #3D2229;
+  --c1: #9CCBFF; --c2: #7FD8B8; --c3: #F5B48A; --c4: #F39AAB; --c5: #B3A8F5; --c6: #8FD07A; --c7: #F0D27A; --c8: #86D3DE; --c9: #6DB9FF; --c10: #E59AD6; --c11: #D4C25A; --c12: #FF9A85;
+  --scrim: rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -1233,3 +1249,41 @@ button.dom-title:hover { color: var(--sky-700); }
 .nav-mini button:hover { background: color-mix(in oklab, var(--sky-100) 60%, transparent); color: var(--ink); }
 .nav-mini button.on { background: var(--cloud); color: var(--sky-700); font-weight: 600; box-shadow: var(--shadow-sm), 0 0 0 1px var(--sky-200); }
 .nav-mini button.due::after { content: ''; position: absolute; top: 6px; right: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+
+/* Choix du style : personnages et apparence (entretien de départ et Réglages) */
+.sp-grid { display: grid; gap: 12px; }
+.sp-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.sp-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sp-opt { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px 12px 14px; border-radius: 22px; text-align: left; background: var(--cloud); box-shadow: var(--shadow-sm), inset 0 0 0 1.5px var(--line); transition: box-shadow 0.2s, transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+.sp-opt:hover { transform: translateY(-2px); box-shadow: var(--shadow-md), inset 0 0 0 1.5px var(--sky-200); }
+.sp-opt.on { box-shadow: var(--shadow-md), inset 0 0 0 2px var(--sky-500); }
+.sp-opt.on::after { content: ''; position: absolute; top: 12px; right: 12px; width: 22px; height: 22px; border-radius: 50%; background: var(--ok) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.3 2.3 4.7-5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px no-repeat; animation: check-bounce 0.45s cubic-bezier(0.3, 1.6, 0.5, 1); }
+.sp-opt > b { font-size: 15px; font-weight: 600; margin-top: 4px; }
+.sp-opt > span:not(.sp-preview):not(.sp-split):not(.sp-faces) { font-size: 13px; color: var(--muted); line-height: 1.45; }
+.sp-faces { display: flex; gap: 2px; margin-top: 2px; }
+.sp-faces img { width: 28px; height: 28px; object-fit: contain; }
+.sp-split { display: grid; grid-template-columns: 1fr 1fr; width: 100%; border-radius: 16px; overflow: hidden; }
+.sp-split .sp-preview { border-radius: 0; }
+.sp-split .sp-preview { padding: 12px 8px; }
+.sp-split .sp-card img { display: none; }
+/* Aperçu : couleurs fixes, pour montrer le clair et le sombre quel que soit le thème actuel */
+.sp-preview { --pv-bg: var(--sky-50); --pv-card: var(--cloud); --pv-line: var(--sky-200); --pv-ink: var(--ink); --pv-soft: var(--sky-100);
+  display: flex; align-items: center; width: 100%; height: 86px; padding: 12px; border-radius: 16px; background: radial-gradient(circle, var(--dot) 1px, transparent 1.2px) 0 0 / 12px 12px, var(--pv-bg); overflow: hidden; }
+.sp-preview.t-light { --pv-bg: #F4FAFF; --pv-card: #FFFFFF; --pv-line: #C9E5FF; --pv-ink: #142133; --pv-soft: #E4F2FF; }
+.sp-preview.t-dark { --pv-bg: #0D1626; --pv-card: #15223A; --pv-line: #263A5C; --pv-ink: #EAF3FF; --pv-soft: #1B2A45; }
+.sp-card { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 10px; border-radius: 14px; background: var(--pv-card); box-shadow: 0 6px 18px rgba(42, 122, 196, 0.12), inset 0 0 0 1.5px var(--pv-line); }
+.sp-ck { width: 14px; height: 14px; flex: none; border-radius: 50%; border: 2px solid #9DD1FF; }
+.sp-lines { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.sp-lines b { display: block; height: 7px; width: 80%; border-radius: 99px; background: var(--pv-ink); opacity: 0.75; }
+.sp-lines span { display: flex; gap: 4px; }
+.sp-lines em { display: block; height: 9px; width: 30px; border-radius: 99px; background: var(--pv-soft); }
+.sp-card img { width: 34px; height: 34px; object-fit: contain; flex: none; animation: float 6s ease-in-out infinite; }
+.onb-style { display: flex; flex-direction: column; gap: 22px; }
+.onb-style h2 { font-size: 15px; font-weight: 600; margin: 0 0 10px; }
+@media (max-width: 720px) {
+  .sp-grid.three { grid-template-columns: minmax(0, 1fr); }
+  .sp-grid.two { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { .sp-card img, .sp-opt.on::after { animation: none; } }
+/* Le bleu ciel reste clair en mode sombre : texte toujours foncé dessus (contraste) */
+.btn.primary, .btn.primary:hover:not(:disabled), .chip.ai { color: #142133; }

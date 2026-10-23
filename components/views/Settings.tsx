@@ -5,6 +5,7 @@ import type { Settings } from '@/lib/types';
 import { useUI } from '../ui-context';
 import { Icon } from '../icons';
 import { Head } from './Calendar';
+import { MascotChoice, ThemeChoice } from '../StylePicker';
 import { DEFAULT_CONTEXTS, REVIEW_CADENCES, ctxLabel } from '@/lib/gtd';
 
 const PRESETS: { key: string; name: string; text: string; s: Partial<Settings> }[] = [
@@ -85,9 +86,22 @@ export function SettingsView() {
           <div className="toggles">
             <Toggle on={s.showContexts} onChange={(v) => save({ showContexts: v })} label="Contextes" hint="Où tu peux faire l'action : @ordi, @téléphone…" />
             <Toggle on={s.showPriorities} onChange={(v) => save({ showPriorities: v })} label="Priorités" hint="Haute, moyenne, basse." />
-            <Toggle on={s.showMascots} onChange={(v) => save({ showMascots: v })} label="Personnages nuages" hint="Un petit nuage illustre chaque tâche. Coupe-les pour un rendu plus sobre." />
             <Toggle on={s.showWaitingSomeday} onChange={(v) => save({ showWaitingSomeday: v })} label="Listes « En attente » et « Un jour »" hint="Ce que tu as délégué, et les idées pour plus tard." />
           </div>
+        </div>
+
+        <div className="sec">
+          <div className="sec-head">
+            <h2>Apparence</h2>
+          </div>
+          <ThemeChoice />
+        </div>
+
+        <div className="sec">
+          <div className="sec-head">
+            <h2>Personnages nuages</h2>
+          </div>
+          <MascotChoice />
         </div>
 
         <div className="sec">

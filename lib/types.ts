@@ -113,6 +113,8 @@ export interface Settings {
   reviewEvery: number;
   /** Personnages nuages sur les cartes (à couper pour un usage plus pro). */
   showMascots: boolean;
+  /** Clair, sombre, ou comme l'appareil. */
+  theme?: 'auto' | 'light' | 'dark';
   /** Ville, pour que l'IA trouve les bons liens (restaurant, salle, médecin). */
   city?: string;
 }
