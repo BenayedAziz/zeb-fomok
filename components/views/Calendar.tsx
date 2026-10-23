@@ -7,11 +7,11 @@ import { Card, GroupedByProject } from '../Card';
 import { Icon } from '../icons';
 import { mascotFor } from '@/lib/mascots';
 import {
-  backlog, guessContext, isOpen, colorOfItem, colorOfProject, contextsOf, counts, goalsSorted, isEvent, list, overdue, projectsSorted, reviewDue, lastReviewDays, entriesOn, type Entry,
+  backlog, domainsSorted, guessContext, isOpen, colorOfItem, colorOfProject, contextsOf, counts, goalsSorted, isEvent, list, overdue, projectsSorted, reviewDue, lastReviewDays, entriesOn, type Entry,
 } from '@/lib/gtd';
 import { DAYS, DSHORT, MONTHS, MSHORT, addDays, isoOf, isoWeek, minutesOf, mondayOf, pad, parseIso, relDate, timeOf, timeRange, todayIso } from '@/lib/dates';
 
-export const HOUR_PX = 60;
+export const HOUR_PX = 72;
 const SNAP = 15;
 const snap = (m: number) => Math.round(m / SNAP) * SNAP;
 
@@ -146,6 +146,23 @@ function ProjectLegend() {
   const { ui, set } = useUI();
   const ps = projectsSorted(data).filter((p) => p.status === 'active');
   if (!ps.length) return null;
+  // Rangée par domaine : la couleur du domaine, puis ses projets dans leurs nuances.
+  const groups = [
+    ...domainsSorted(data).map((d) => ({ id: d.id, name: d.name, color: `var(--${d.color})`, ps: ps.filter((p) => p.domainId === d.id) })),
+    { id: 'none', name: 'Sans domaine', color: 'var(--line-2)', ps: ps.filter((p) => !p.domainId || !data.domains[p.domainId]) },
+  ].filter((g) => g.ps.length);
+  const chip = (p: (typeof ps)[number]) => (
+    <button
+      key={p.id}
+      className={`legend-item${ui.calProject === p.id ? ' on' : ''}${p.parentId ? ' sub' : ''}`}
+      style={{ '--pc': colorOfProject(data, p) } as React.CSSProperties}
+      onClick={() => set({ calProject: ui.calProject === p.id ? null : p.id })}
+      title={p.parentId && data.projects[p.parentId] ? `Dans ${data.projects[p.parentId].name}` : undefined}
+    >
+      <i className="dot" />
+      {p.name}
+    </button>
+  );
   return (
     <div className="legend" aria-label="Filtrer le calendrier par projet">
       {ui.calProject && (
@@ -153,16 +170,11 @@ function ProjectLegend() {
           Tous les projets ✕
         </button>
       )}
-      {ps.map((p) => (
-        <button
-          key={p.id}
-          className={`legend-item${ui.calProject === p.id ? ' on' : ''}`}
-          style={{ '--pc': colorOfProject(data, p) } as React.CSSProperties}
-          onClick={() => set({ calProject: ui.calProject === p.id ? null : p.id })}
-        >
-          <i className="dot" />
-          {p.name}
-        </button>
+      {groups.map((g) => (
+        <span key={g.id} className="legend-dom" style={{ '--dc': g.color } as React.CSSProperties}>
+          <span className="ld-name">{g.name}</span>
+          {g.ps.map(chip)}
+        </span>
       ))}
     </div>
   );
@@ -268,7 +280,7 @@ interface Placed {
 }
 /** Un événement de 3 h ou plus est un lieu où l'on est, pas une indisponibilité : les tâches s'y posent. */
 const BG_MIN = 180;
-function layout(entries: Entry[]): Placed[] {
+function layout(entries: Entry[], minPx = 26): Placed[] {
   const all: Placed[] = entries
     .map((e) => {
       const start = minutesOf(e.it.time!);
@@ -279,7 +291,7 @@ function layout(entries: Entry[]): Placed[] {
   const bgs = all.filter((p) => isEvent(p.e.it) && p.end - p.start >= BG_MIN).map((p) => ({ ...p, bg: true }));
   const items = all.filter((p) => !(isEvent(p.e.it) && p.end - p.start >= BG_MIN));
   // Un bloc court s'affiche avec une hauteur minimale lisible : on en tient compte pour ne pas les superposer.
-  const MIN_VIS = Math.ceil((26 / HOUR_PX) * 60);
+  const MIN_VIS = Math.ceil((minPx / HOUR_PX) * 60);
   const vend = (p: Placed) => Math.max(p.end, p.start + MIN_VIS);
   let cluster: Placed[] = [];
   let clusterEnd = -1;
@@ -520,7 +532,7 @@ function QuickAdd({ date, start, end, anchor, onClose }: { date: string; start: 
   );
 }
 
-function Timeline({ date, entries, showHours, nowLine }: { date: string; entries: Entry[]; showHours: boolean; nowLine: boolean }) {
+function Timeline({ date, entries, showHours, nowLine, dense }: { date: string; entries: Entry[]; showHours: boolean; nowLine: boolean; dense?: boolean }) {
   const { data } = useStore();
   const [draft, setDraft] = useState<Draft | null>(null);
   const draftEl = useRef<HTMLDivElement>(null);
@@ -530,7 +542,8 @@ function Timeline({ date, entries, showHours, nowLine }: { date: string; entries
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const { dayStart, dayEnd } = data.settings;
   const hours = Array.from({ length: dayEnd - dayStart + 1 }, (_, i) => dayStart + i);
-  const placed = layout(entries.filter((e) => e.it.time));
+  // Colonne étroite (semaine) : les blocs courts gardent toute la largeur plutôt que de se partager une colonne illisible.
+  const placed = layout(entries.filter((e) => e.it.time), dense ? 0 : 26);
   const now = new Date();
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const showNow = nowLine && date === todayIso() && nowMin >= dayStart * 60 && nowMin <= (dayEnd + 1) * 60;
@@ -937,21 +950,119 @@ function AgendaScroll({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Libellé d'une plage de 7 jours : « 19 – 25 octobre » ou « 28 oct. – 3 nov. ». */
+function rangeLabel(from: string) {
+  const md = parseIso(from);
+  const ed = parseIso(addDays(from, 6));
+  return md.getMonth() === ed.getMonth() ? `${md.getDate()} – ${ed.getDate()} ${MONTHS[ed.getMonth()]}` : `${md.getDate()} ${MSHORT[md.getMonth()]} – ${ed.getDate()} ${MSHORT[ed.getMonth()]}`;
+}
+
+/*
+ * Semaine sur ordinateur : un ruban de 3 semaines (la précédente, celle choisie, la suivante) qu'on fait défiler
+ * jour par jour. On voit toujours 7 jours, par exemple du mardi dernier au mardi prochain.
+ */
+const SPAN_BEFORE = 7;
+const SPAN = 21;
+const GUTTER = 56;
+function WeekScroller({ onRange }: { onRange: (first: string) => void }) {
+  const { data } = useStore();
+  const { ui, set } = useUI();
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(0);
+  const m = mondayOf(ui.date);
+  const days = Array.from({ length: SPAN }, (_, i) => addDays(m, i - SPAN_BEFORE));
+  const dayW = Math.max(140, Math.floor((w - GUTTER) / 7));
+  const t = todayIso();
+  const { dayStart, dayEnd } = data.settings;
+  const hours = Array.from({ length: dayEnd - dayStart + 1 }, (_, i) => dayStart + i);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setW(el.clientWidth));
+    ro.observe(el);
+    setW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  // La semaine choisie s'affiche en entier ; à l'ouverture, on se place aussi sur l'heure actuelle.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !w) return;
+    el.scrollLeft = SPAN_BEFORE * dayW;
+    onRange(days[SPAN_BEFORE]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [m, dayW]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.scrollTop = Math.max(0, (new Date().getHours() - dayStart - 1) * HOUR_PX);
+  }, [dayStart]);
+  const raf = useRef(0);
+  const onScroll = () => {
+    cancelAnimationFrame(raf.current);
+    raf.current = requestAnimationFrame(() => {
+      const el = ref.current;
+      if (!el) return;
+      const i = Math.min(SPAN - 7, Math.max(0, Math.round(el.scrollLeft / dayW)));
+      onRange(days[i]);
+    });
+  };
+  const byDay = days.map((d) => entriesOn(data, d, projFilter(ui.calProject)));
+  return (
+    <div className="wscroll" ref={ref} onScroll={onScroll}>
+      <div className="wsgrid" style={{ gridTemplateColumns: `${GUTTER}px repeat(${SPAN}, ${dayW}px)` }}>
+        <div className="ws-corner" />
+        {days.map((d) => {
+          const dd = parseIso(d);
+          return (
+            <button key={`h-${d}`} className={`ws-day${d === t ? ' today' : ''}${parseIso(d).getDay() === 1 ? ' monday' : ''}`} onClick={() => set({ date: d, cal: 'day' })} title="Voir cette journée">
+              <b>{DSHORT[dd.getDay()]}</b> <span>{dd.getDate()}</span>
+              {dd.getDate() === 1 || d === days[0] ? <em>{MSHORT[dd.getMonth()]}</em> : null}
+            </button>
+          );
+        })}
+        <div className="ws-label">Journée</div>
+        {days.map((d, i) => (
+          <div key={`a-${d}`} className={`ws-cell${parseIso(d).getDay() === 1 ? ' monday' : ''}`} data-drop="date" data-date={d}>
+            {byDay[i]
+              .filter((e) => !e.it.time)
+              .map((e) => (
+                <Card key={`${e.it.id}-${d}`} it={e.it} o={{ compact: true, noDate: true, ghost: e.ghost }} />
+              ))}
+          </div>
+        ))}
+        <div className="ws-hours" aria-hidden="true">
+          {hours.map((h) => (
+            <div key={h} style={{ height: HOUR_PX }}>
+              {pad(h)}:00
+            </div>
+          ))}
+        </div>
+        {days.map((d, i) => (
+          <div key={`t-${d}`} className={`ws-col${d === t ? ' today' : ''}${parseIso(d).getDay() === 1 ? ' monday' : ''}${[0, 6].includes(parseIso(d).getDay()) ? ' weekend' : ''}`}>
+            <Timeline date={d} entries={byDay[i]} showHours={false} nowLine dense />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function WeekView() {
   const { data } = useStore();
   const { ui, set } = useUI();
   const narrow = useNarrow();
   const m = mondayOf(ui.date);
-  const end = addDays(m, 6);
-  const md = parseIso(m);
-  const ed = parseIso(end);
-  const label = md.getMonth() === ed.getMonth() ? `${md.getDate()} – ${ed.getDate()} ${MONTHS[ed.getMonth()]}` : `${md.getDate()} ${MSHORT[md.getMonth()]} – ${ed.getDate()} ${MSHORT[ed.getMonth()]}`;
+  const [first, setFirst] = useState(m);
   const t = todayIso();
   const days = Array.from({ length: 7 }, (_, i) => addDays(m, i));
   const byDay = days.map((d) => entriesOn(data, d, projFilter(ui.calProject)));
   return (
     <>
-      {narrow ? <MobileCalBar /> : <Head eyebrow={`Semaine ${isoWeek(m)}`} title={label} actions={<CalNav />} />}
+      {narrow ? (
+        <MobileCalBar />
+      ) : (
+        <Head eyebrow={`Semaine ${isoWeek(first)}${first !== mondayOf(first) ? ` – ${isoWeek(addDays(first, 6))}` : ''}`} title={rangeLabel(first)} lede="Fais défiler de côté pour voir les jours d'avant ou d'après." actions={<CalNav />} />
+      )}
       <Compass />
       <ProjectLegend />
       <div className="stack">
@@ -975,38 +1086,7 @@ function WeekView() {
             })}
           </div>
         ) : (
-          <div className="wgrid">
-            <div className="wg-head">
-              <div />
-              {days.map((d) => {
-                const dd = parseIso(d);
-                return (
-                  <button key={d} className={`wg-day${d === t ? ' today' : ''}`} onClick={() => set({ date: d, cal: 'day' })}>
-                    <b>{DSHORT[dd.getDay()]}</b> <span>{dd.getDate()}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="wg-allday">
-              <div className="hint">Journée</div>
-              {days.map((d, i) => {
-                const untimed = byDay[i].filter((e) => !e.it.time);
-                return (
-                  <div key={d} className="wg-cell" data-drop="date" data-date={d}>
-                    {untimed.map((e) => (
-                      <Card key={`${e.it.id}-${d}`} it={e.it} o={{ compact: true, noDate: true, ghost: e.ghost }} />
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-            <div className="wg-body">
-              <Timeline date={days[0]} entries={byDay[0]} showHours nowLine />
-              {days.slice(1).map((d, i) => (
-                <Timeline key={d} date={d} entries={byDay[i + 1]} showHours={false} nowLine />
-              ))}
-            </div>
-          </div>
+          <WeekScroller onRange={setFirst} />
         )}
         <PlanPanel flat />
       </div>

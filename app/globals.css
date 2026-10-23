@@ -1489,3 +1489,61 @@ button.dom-title:hover { color: var(--sky-700); }
   .padd .seg.sm button { flex: 1; }
   .padd .padd-date { width: 128px; }
 }
+
+/* Menu : la hiérarchie se lit d'un coup d'œil. Domaine = titre coloré, ses projets reliés par un trait de sa couleur,
+   les sous-projets par un trait de la couleur du projet. */
+.side-mid .proj-group { margin-top: 12px; }
+.side-mid .proj-group.pinned { margin-top: 4px; }
+.side-mid .dom-row { height: 32px; }
+.side-mid .dom-name { height: 32px; font-size: 12.5px; font-weight: 700; letter-spacing: 0.06em; color: color-mix(in oklab, var(--dc) 70%, var(--ink)); padding-left: 6px; }
+.side-mid .dom-name .sw { width: 10px; height: 10px; border-radius: 3px; }
+.side-mid .proj-group.empty { margin-top: 2px; }
+.side-mid .proj-group.empty .dom-name { color: var(--faint); font-weight: 600; opacity: 0.75; }
+.side-mid .proj-group.empty .dom-name .sw { opacity: 0.5; }
+.side-mid .proj-group.empty + .proj-group:not(.empty) { margin-top: 12px; }
+.dom-kids { position: relative; margin: 2px 0 2px 12px; padding-left: 8px; }
+.dom-kids::before { content: ''; position: absolute; left: 0; top: 2px; bottom: 6px; width: 2px; border-radius: 2px; background: color-mix(in oklab, var(--dc) 45%, transparent); }
+.proj-kids { position: relative; margin: 0 0 2px 14px; padding-left: 8px; }
+.proj-kids::before { content: ''; position: absolute; left: 0; top: 0; bottom: 6px; width: 2px; border-radius: 2px; background: color-mix(in oklab, var(--pc) 40%, transparent); }
+.side-mid .nav-row { padding-left: 0; }
+.side-mid .nav.proj { padding-left: 8px; }
+.side-mid .nav.proj .pdot { width: 8px; height: 8px; border-radius: 3px; background: var(--pc); }
+.proj-kids .nav.proj { height: 30px; min-height: 30px; font-size: 13.5px; }
+.proj-kids .nav.proj .pdot { width: 6px; height: 6px; border-radius: 50%; }
+.side-mid .nav.proj.on { box-shadow: var(--shadow-sm), inset 3px 0 0 var(--pc), 0 0 0 1px var(--sky-200); }
+
+/* Semaine : ruban de 3 semaines qu'on fait défiler de côté, heures et jours toujours visibles */
+.wscroll { position: relative; overflow: auto; max-height: calc(100vh - 230px); min-height: 420px; border-radius: var(--radius-panel); background: var(--cloud); box-shadow: var(--shadow-md), inset 0 0 0 1.5px var(--line); scroll-snap-type: x proximity; overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: var(--sky-200) transparent; }
+.wsgrid { display: grid; grid-template-rows: auto auto auto; width: max-content; }
+.ws-corner, .ws-day { position: sticky; top: 0; z-index: 8; background: var(--cloud); border-bottom: 1px solid var(--line); }
+.ws-corner { left: 0; z-index: 9; }
+.ws-day { display: flex; align-items: baseline; justify-content: center; gap: 5px; padding: 10px 6px 8px; font-size: 12.5px; color: var(--muted); border-left: 1px solid var(--line); scroll-snap-align: start; scroll-margin-left: 56px; }
+.ws-day b { font-weight: 600; text-transform: capitalize; }
+.ws-day span { font-weight: 600; color: var(--ink); }
+.ws-day em { font-style: normal; font-size: 11px; color: var(--faint); }
+.ws-day:hover { background: var(--sky-50); color: var(--ink); }
+.ws-day.today { color: var(--sky-700); }
+.ws-day.today span { background: var(--sky-300); color: #142133; border-radius: 99px; padding: 1px 8px; }
+.ws-day.monday, .ws-cell.monday, .ws-col.monday { border-left: 2px solid var(--sky-200); }
+.ws-label { position: sticky; left: 0; z-index: 6; background: var(--cloud); padding: 8px 8px 0 4px; font-size: 10.5px; color: var(--faint); text-align: right; border-bottom: 1px solid var(--line); }
+.ws-cell { min-height: 44px; padding: 4px; display: flex; flex-direction: column; gap: 4px; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); min-width: 0; }
+.ws-cell .card { padding: 4px 6px 4px 9px; gap: 5px; }
+.ws-cell .card-title { font-size: 11.5px; }
+.ws-cell .card-meta { display: none; }
+.ws-cell .ck { width: 14px; height: 14px; }
+.ws-hours { position: sticky; left: 0; z-index: 6; background: var(--cloud); border-right: 1px solid var(--line); }
+.ws-hours div { font-size: 10.5px; color: var(--faint); padding: 0 8px 0 4px; transform: translateY(-7px); text-align: right; }
+.ws-hours div:first-child { transform: none; }
+.ws-col { border-left: 1px solid var(--line); min-width: 0; }
+.ws-col.weekend { background: color-mix(in oklab, var(--sky-50) 60%, transparent); }
+.ws-col.today { background: color-mix(in oklab, var(--sky-100) 35%, transparent); }
+.ws-col .tl-wrap { display: block; }
+/* Légende du calendrier rangée par domaine */
+.legend { gap: 10px 14px; align-items: center; }
+.legend-dom { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 3px 4px 3px 10px; border-radius: 999px; background: color-mix(in oklab, var(--dc) 9%, var(--cloud)); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--dc) 25%, transparent); }
+.ld-name { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: color-mix(in oklab, var(--dc) 70%, var(--ink)); margin-right: 2px; }
+.legend-dom .legend-item { background: var(--cloud); }
+.legend-item .dot { background: var(--pc); }
+.legend-item.sub { font-size: 11.5px; opacity: 0.9; }
+.ws-label, .ws-cell { position: sticky; top: 39px; z-index: 7; background: var(--cloud); }
+.ws-label { z-index: 8; }

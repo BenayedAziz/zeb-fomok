@@ -1,6 +1,7 @@
 # Second Cerveau : notes pour Claude Code
 
 Appli GTD (Getting Things Done) en français. Tutoiement, ton direct, pas de jargon dans l'interface.
+Les principes produit sont dans `docs/PRINCIPES.md` : chaque changement doit les respecter (hiérarchie domaine → projet → sous-projet et ses couleurs, gestes identiques PC et téléphone, tout annulable).
 
 ## Pile
 - Next.js 15 App Router + TypeScript strict, React 19, pas de framework CSS : tout le style est dans `app/globals.css` (jetons de couleur clair/sombre en haut du fichier, classes par composant).
@@ -20,7 +21,7 @@ Appli GTD (Getting Things Done) en français. Tutoiement, ton direct, pas de jar
 - Statuts d'un élément : inbox, todo, doing, waiting, someday, done. Tout ce que range l'IA porte `aiSorted: true` jusqu'à validation par l'utilisateur. Une tâche faisable en moins de 2 minutes porte `quick: true`.
 - Liens pour agir : `items.links` (`{label, url}`). Le rangement ne donne que des sites sûrs (liste `SAFE_HOSTS` dans `lib/server/ai.ts`) et le plan ; `/api/links` cherche sur le web la page de réservation et ne garde que les adresses vues dans les résultats. Ne jamais afficher un lien inventé.
 - Contexte @ : toujours rempli pour une tâche (IA, sinon `guessContext` dans `lib/gtd.ts`).
-- Projets : sous-projets via `parentId` (arbre replié dans le menu), `pinned` en haut, `archivedAt` cache sans supprimer. `projectsSorted` exclut les archivés.
+- Projets : sous-projets via `parentId` (arbre replié dans le menu), `pinned` en haut, `archivedAt` cache sans supprimer. `projectsSorted` exclut les archivés. La couleur d'un projet vient de son domaine (`colorOfProject` : nuances par projet, plus claire pour un sous-projet).
 - Remarques des testeurs : table `feedback`, tout compte connecté écrit, seul l'admin (`ADMIN_EMAILS` dans `components/Feedback.tsx`, même adresse dans la migration 007) lit.
 - Supprimer un élément ou une épingle l'envoie à la corbeille (table `trash`, 30 jours) ; `forget` seulement pour annuler une création toute fraîche.
 - Dates en chaînes `AAAA-MM-JJ` locales (`lib/dates.ts`), heures `HH:MM`.
