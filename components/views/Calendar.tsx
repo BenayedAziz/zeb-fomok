@@ -356,6 +356,9 @@ function TimeBlock({ p, dayStart, colW }: { p: Placed; dayStart: number; colW: n
   const top = ((start - dayStart * 60) / 60) * HOUR_PX;
   const height = Math.max((dur / 60) * HOUR_PX - 2, 24);
   const geo = geometry(p, colW);
+  // Une tâche dont le créneau est passé sans être cochée : elle reste à faire, on la signale.
+  const today = todayIso();
+  const late = !ev && !ghost && it.status !== 'done' && (p.e.date < today || (p.e.date === today && p.end <= nowMinutes()));
 
   const begin = (mode: 'move' | 'resize') => (e: React.PointerEvent) => {
     if (ghost || e.button !== 0) return;
@@ -406,7 +409,7 @@ function TimeBlock({ p, dayStart, colW }: { p: Placed; dayStart: number; colW: n
   return (
     <div
       ref={el}
-      className={`tblock${ev ? ' event' : ''}${p.bg ? ' bg' : ''}${geo.stacked ? ' stacked' : ''}${ghost ? ' ghost' : ''}${it.status === 'done' ? ' done' : ''}${drag ? ' dragging' : ''}${drag && held.current ? ' held' : ''}${ui.justDone[it.id] ? ' just-done' : ''}`}
+      className={`tblock${ev ? ' event' : ''}${p.bg ? ' bg' : ''}${geo.stacked ? ' stacked' : ''}${late ? ' late' : ''}${ghost ? ' ghost' : ''}${it.status === 'done' ? ' done' : ''}${drag ? ' dragging' : ''}${drag && held.current ? ' held' : ''}${ui.justDone[it.id] ? ' just-done' : ''}`}
       style={{
         top,
         height,
@@ -580,8 +583,7 @@ function Timeline({ date, entries, showHours, nowLine, dense }: { date: string; 
   const hours = Array.from({ length: dayEnd - dayStart + 1 }, (_, i) => dayStart + i);
   // Colonne étroite (semaine) : les blocs courts gardent toute la largeur plutôt que de se partager une colonne illisible.
   const placed = layout(entries.filter((e) => e.it.time), dense ? 0 : 26);
-  const now = new Date();
-  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const nowMin = useMinute();
   const showNow = nowLine && date === todayIso() && nowMin >= dayStart * 60 && nowMin <= (dayEnd + 1) * 60;
   return (
     <div className={`tl-wrap${showHours ? '' : ' no-hours'}`}>
@@ -674,11 +676,13 @@ function Timeline({ date, entries, showHours, nowLine, dense }: { date: string; 
   );
 }
 
-function AllDay({ entries }: { entries: Entry[] }) {
+/** Ce qui n'a pas d'heure ce jour-là : les événements de la journée et, sur téléphone, les tâches à caser. */
+function AllDay({ entries, withTasks }: { entries: Entry[]; withTasks?: boolean }) {
   const { data } = useStore();
-  const { openDrawer } = useUI();
+  const { openDrawer, toggleDone } = useUI();
   const evs = entries.filter((e) => isEvent(e.it) && !e.it.time);
-  if (!evs.length) return null;
+  const tasks = withTasks ? entries.filter((e) => !isEvent(e.it) && !e.it.time && !e.ghost).sort((a, b) => Number(a.it.status === 'done') - Number(b.it.status === 'done')) : [];
+  if (!evs.length && !tasks.length) return null;
   return (
     <div className="allday">
       {evs.map((e) => (
@@ -687,6 +691,86 @@ function AllDay({ entries }: { entries: Entry[] }) {
           {e.it.recurrence ? ' ↻' : ''}
         </button>
       ))}
+      {tasks.length > 0 && (
+        <div className="ad-tasks">
+          <span className="ad-label">Sans heure</span>
+          {tasks.map((e) => (
+            <div key={e.it.id} className={`ad-task${e.it.status === 'done' ? ' done' : ''}`} style={{ '--pc': colorOfItem(data, e.it) } as React.CSSProperties}>
+              <button className="ck sm" onClick={() => toggleDone(e.it.id)} aria-label={e.it.status === 'done' ? 'Décocher' : 'Marquer fait'}>
+                <Icon name="check" />
+              </button>
+              <button className="ad-title" onClick={() => openDrawer({ type: 'item', id: e.it.id })}>
+                {e.it.title}
+              </button>
+              {e.it.quick && <span className="chip quick">2 min</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Minutes écoulées depuis minuit. */
+const nowMinutes = () => {
+  const n = new Date();
+  return n.getHours() * 60 + n.getMinutes();
+};
+
+/** L'heure qui avance : rafraîchit l'affichage chaque minute. */
+function useMinute() {
+  const [m, setM] = useState(nowMinutes);
+  useEffect(() => {
+    const t = window.setInterval(() => setM(nowMinutes()), 60_000);
+    return () => window.clearInterval(t);
+  }, []);
+  return m;
+}
+
+const inMin = (m: number) => (m < 60 ? `dans ${m} min` : `dans ${Math.floor(m / 60)} h${m % 60 ? ` ${pad(m % 60)}` : ''}`);
+
+/** En haut de l'agenda du jour : ce que je fais maintenant, ce qui vient ensuite, et ce qui reste. */
+function NowNext({ entries }: { entries: Entry[] }) {
+  const { data } = useStore();
+  const { openDrawer, toggleDone } = useUI();
+  const now = useMinute();
+  const timed = entries
+    .filter((e) => e.it.time && !e.ghost && e.it.status !== 'done')
+    .map((e) => {
+      const start = minutesOf(e.it.time!);
+      const dur = e.it.duration || (isEvent(e.it) ? 60 : 30);
+      return { it: e.it, start, end: start + dur };
+    })
+    // Une journée de travail est un lieu, pas une activité : on montre ce qu'on y fait.
+    .filter((x) => !(isEvent(x.it) && x.end - x.start >= BG_MIN));
+  const cur = timed.filter((x) => x.start <= now && now < x.end);
+  const next = timed.filter((x) => x.start > now).sort((a, b) => a.start - b.start)[0];
+  const late = timed.filter((x) => !isEvent(x.it) && x.end <= now).length;
+  const left = entries.filter((e) => !e.ghost && !isEvent(e.it) && e.it.status !== 'done').length;
+  if (!cur.length && !next && !left) return null;
+  const row = (x: { it: Item; start: number; end: number }, tag: string, when: string) => (
+    <div key={x.it.id} className="nn-row" style={{ '--pc': colorOfItem(data, x.it) } as React.CSSProperties}>
+      <span className="nn-tag">{tag}</span>
+      {!isEvent(x.it) && (
+        <button className="ck sm" onClick={() => toggleDone(x.it.id)} aria-label="Marquer fait">
+          <Icon name="check" />
+        </button>
+      )}
+      <button className="nn-title" onClick={() => openDrawer({ type: 'item', id: x.it.id })}>
+        <b>{x.it.title}</b>
+        <span>{when}</span>
+      </button>
+    </div>
+  );
+  return (
+    <div className="nownext" aria-label="Maintenant et ensuite">
+      {cur.slice(0, 2).map((x) => row(x, 'Maintenant', `jusqu'à ${timeOf(x.end)}`))}
+      {next && row(next, 'Ensuite', `${timeOf(next.start)} · ${inMin(next.start - now)}`)}
+      {!cur.length && !next && <div className="nn-free">Plus rien à l&apos;agenda aujourd&apos;hui.</div>}
+      <div className="nn-foot">
+        {left > 0 ? `${left} tâche${left > 1 ? 's' : ''} à faire aujourd'hui` : 'Toutes les tâches du jour sont faites'}
+        {late > 0 && <span className="nn-late"> · {late} en retard</span>}
+      </div>
     </div>
   );
 }
@@ -847,7 +931,8 @@ function DayView() {
           <span className="on-touch">Appui long pour ajouter</span>
         </span>
       </div>
-      <AllDay entries={entries} />
+      {isToday && !phone && <NowNext entries={entries} />}
+      <AllDay entries={entries} withTasks={phone} />
       <AgendaScroll>
         <Timeline date={d} entries={entries} showHours nowLine />
       </AgendaScroll>
@@ -871,6 +956,7 @@ function DayView() {
         <MobileCalBar tabs={{ tab, setTab, nDay: entries.filter((e) => e.it.status !== 'done').length, nPlan: backlog(data).length + (isToday ? overdue(data).length : 0) }} />
         {tab === 'day' && (
           <div className="stack mday">
+            {isToday && <NowNext entries={entries} />}
             {isToday && <Alerts />}
             {nPlan > 0 && (
               <div className="plan-hint">

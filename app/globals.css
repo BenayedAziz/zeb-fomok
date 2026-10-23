@@ -1551,3 +1551,43 @@ button.dom-title:hover { color: var(--sky-700); }
 /* Blocs qui se chevauchent dans une colonne étroite : en cascade, celui qu'on survole passe devant. */
 .tblock.stacked { box-shadow: var(--shadow-sm), inset 0 0 0 1.5px var(--sky-200), -3px 0 8px -4px rgba(11, 29, 51, 0.25); }
 .tblock.stacked:hover { z-index: 5; }
+
+/* ---------- Agenda plus lisible : la couleur du projet sur chaque tâche, le retard, maintenant / ensuite ---------- */
+/* Une tâche porte la couleur de son projet (barre à gauche, fond à peine teinté) : on la repère d'un coup d'œil, même sur le fond rayé d'une journée de travail. */
+.tblock:not(.bg):not(.event) { background: color-mix(in oklab, var(--pc) 9%, var(--cloud)); box-shadow: var(--shadow-sm), inset 0 0 0 1.5px color-mix(in oklab, var(--pc) 35%, var(--sky-100)); padding-left: 11px; }
+.tblock:not(.bg):not(.event)::before { content: ''; position: absolute; top: 4px; bottom: 4px; left: 3px; width: 4px; border-radius: 999px; background: var(--pc); }
+.tblock:not(.bg):not(.event) .tb-row b { font-weight: 650; }
+.tblock.event:not(.bg):not(.done) { background: color-mix(in oklab, var(--pc) 20%, var(--cloud)); }
+.tblock.event:not(.bg):not(.done)::before { background: var(--pc); }
+/* Faite : elle s'efface pour laisser la place à ce qui reste. */
+.tblock.done:not(.bg):not(.event) { opacity: 0.55; box-shadow: inset 0 0 0 1px var(--line); }
+.tblock.done:not(.bg)::before { background: var(--line-2); }
+/* Créneau passé, pas cochée : un liseré chaud, elle reste à faire. */
+.tblock.late:not(.bg):not(.event) { box-shadow: var(--shadow-sm), inset 0 0 0 1.5px color-mix(in oklab, var(--warn) 75%, transparent); }
+.tblock.stacked:not(.bg):not(.event):not(.late) { box-shadow: var(--shadow-sm), inset 0 0 0 1.5px color-mix(in oklab, var(--pc) 35%, var(--sky-100)), -3px 0 8px -4px rgba(11, 29, 51, 0.25); }
+.tblock.late .tb-time::after { content: ' · en retard'; color: color-mix(in oklab, var(--warn) 80%, var(--ink)); font-weight: 600; }
+
+.nownext { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 18px; background: var(--sky-50); box-shadow: inset 0 0 0 1.5px var(--sky-100); }
+.nn-row { --pc: var(--sky-500); display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 10px; border-radius: 14px; background: var(--cloud); box-shadow: var(--shadow-sm), inset 4px 0 0 var(--pc); }
+.nn-tag { flex: none; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--sky-700); width: 86px; }
+.nn-row .ck.sm { width: 20px; height: 20px; }
+.nn-title { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; background: none; border: 0; padding: 0; color: var(--ink); }
+.nn-title b { max-width: 100%; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nn-title span { font-size: 12px; color: var(--muted); }
+.nn-free { font-size: 13px; color: var(--muted); padding: 2px 4px; }
+.nn-foot { font-size: 12px; color: var(--muted); padding: 0 4px; }
+.nn-late { color: color-mix(in oklab, var(--warn) 80%, var(--ink)); font-weight: 600; }
+
+.ad-tasks { flex-basis: 100%; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.ad-label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding: 2px 2px 0; }
+.ad-task { --pc: var(--sky-500); min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 10px 4px 12px; border-radius: 12px; background: color-mix(in oklab, var(--pc) 9%, var(--cloud)); box-shadow: inset 4px 0 0 var(--pc), inset 0 0 0 1.5px color-mix(in oklab, var(--pc) 30%, var(--sky-100)); }
+.ad-task .ck.sm { width: 20px; height: 20px; }
+.ad-title { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 6px 0; font-size: 13.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ad-task.done { opacity: 0.55; }
+.ad-task.done .ad-title { text-decoration: line-through; }
+
+@media (max-width: 860px) {
+  .tblock .tb-row b { font-size: 13.5px; }
+  .tblock .ck.sm { width: 18px; height: 18px; }
+  .mday .nownext { margin: 0 0 2px; }
+}
