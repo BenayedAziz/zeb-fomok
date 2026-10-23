@@ -73,6 +73,10 @@ interface UIApi {
   toggleDone: (id: string) => void;
   schedule: (id: string, date: string | null, time?: string | null) => void;
   removeItem: (id: string) => void;
+  /** Supprime un projet : ses actions restent, sans projet. Annulable. */
+  deleteProject: (id: string) => void;
+  /** Range un projet (et ses sous-projets) dans un autre domaine de vie. Annulable. */
+  moveProject: (id: string, domainId: string | null) => void;
 }
 
 const Ctx = createContext<UIApi | null>(null);
@@ -761,6 +765,68 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     [aiSort],
   );
 
+  const deleteProject = useCallback(
+    (id: string) => {
+      const s = storeRef.current;
+      const d = s.get();
+      const p = d.projects[id];
+      if (!p) return;
+      const items = list(d.items).filter((i) => i.projectId === id).map((i) => i.id);
+      const kids = list(d.projects).filter((x) => x.parentId === id).map((x) => x.id);
+      const pins = list(d.pins).filter((x) => x.projectId === id).map((x) => x.id);
+      s.removeProject(id);
+      kids.forEach((k) => s.updateProject(k, { parentId: null }));
+      pins.forEach((k) => s.updatePin(k, { projectId: null }));
+      setUi((u) => ({ ...u, drawer: null, view: u.view === 'project' && u.projectId === id ? 'projects' : u.view }));
+      toast({
+        text: `Projet « ${p.name} » supprimé.${items.length ? ` Ses ${items.length} action${items.length > 1 ? 's restent' : ' reste'}, sans projet.` : ''}`,
+        actions: [
+          {
+            label: 'Annuler',
+            run: () => {
+              s.restore('projects', p);
+              items.forEach((i) => s.get().items[i] && s.updateItem(i, { projectId: id }));
+              kids.forEach((k) => s.get().projects[k] && s.updateProject(k, { parentId: id }));
+              pins.forEach((k) => s.get().pins[k] && s.updatePin(k, { projectId: id }));
+            },
+          },
+        ],
+      });
+    },
+    [toast],
+  );
+
+  const moveProject = useCallback(
+    (id: string, domainId: string | null) => {
+      const s = storeRef.current;
+      const d = s.get();
+      const p = d.projects[id];
+      if (!p || (p.domainId || null) === domainId) return;
+      const family = familyIds(d, id);
+      const before = family.map((k) => [k, d.projects[k]?.domainId ?? null, d.projects[k]?.parentId ?? null] as const);
+      const old = p.domainId || null;
+      // Les actions qui suivaient le domaine de l'ancien projet suivent le nouveau.
+      const items = list(d.items).filter((i) => i.projectId && family.includes(i.projectId) && (i.domainId || null) === old).map((i) => i.id);
+      family.forEach((k) => s.updateProject(k, { domainId }));
+      const parent = p.parentId ? d.projects[p.parentId] : null;
+      if (parent && (parent.domainId || null) !== domainId) s.updateProject(id, { parentId: null });
+      items.forEach((i) => s.updateItem(i, { domainId }));
+      toast({
+        text: `${p.name} → ${domainId ? d.domains[domainId]?.name : 'Sans domaine'}`,
+        actions: [
+          {
+            label: 'Annuler',
+            run: () => {
+              before.forEach(([k, dom, par]) => s.updateProject(k, { domainId: dom, parentId: par }));
+              items.forEach((i) => s.updateItem(i, { domainId: old }));
+            },
+          },
+        ],
+      });
+    },
+    [toast],
+  );
+
   const removeItem = useCallback(
     (id: string) => {
       const prev = storeRef.current.removeItem(id);
@@ -881,8 +947,10 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       toggleDone,
       schedule,
       removeItem,
+      deleteProject,
+      moveProject,
     }),
-    [ui, set, go, toast, toastState, dismissToast, capture, aiSort, fileWithAi, planDay, findLinks, toggleDone, schedule, removeItem],
+    [ui, set, go, toast, toastState, dismissToast, capture, aiSort, fileWithAi, planDay, findLinks, toggleDone, schedule, removeItem, deleteProject, moveProject],
   );
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
 }
